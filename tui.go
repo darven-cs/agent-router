@@ -47,6 +47,19 @@ type model struct {
 	// Confirmation mode
 	confirmMode bool
 	confirmType string // "delete" or "shutdown"
+
+	// Callback for upstream changes
+	OnUpstreamAdded   func(*Upstream)
+	OnUpstreamUpdated func(*Upstream, string) // upstream, oldName
+	OnUpstreamDeleted func(string)           // name
+}
+
+// UpstreamChange represents a change to upstream configuration
+type UpstreamChange struct {
+	Type     string    // "added", "updated", "deleted"
+	Upstream *Upstream // For added/updated
+	OldName  string    // For updated when name changed
+	Name     string    // For deleted
 }
 
 // NewModel creates a new TUI model
@@ -129,7 +142,6 @@ func (m model) handleConfirm(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "y", "enter":
 			if m.confirmType == "delete" {
-				// Return UpstreamDeleted message
 				deletedName := m.upstreams[m.selectedIndex].Name
 				m.upstreams = append(m.upstreams[:m.selectedIndex], m.upstreams[m.selectedIndex+1:]...)
 				if m.selectedIndex >= len(m.upstreams) && m.selectedIndex > 0 {
@@ -137,7 +149,10 @@ func (m model) handleConfirm(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				m.confirmMode = false
 				m.confirmType = ""
-				return m, func() tea.Msg { return UpstreamDeleted{Name: deletedName} }
+				if m.OnUpstreamDeleted != nil {
+					m.OnUpstreamDeleted(deletedName)
+				}
+				return m, nil
 			} else if m.confirmType == "shutdown" {
 				return m, tea.Quit
 			}
@@ -181,7 +196,7 @@ func (m model) handleFormInput(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// submitForm validates and submits the form, returning a message
+// submitForm validates and submits the form
 func (m model) submitForm() (tea.Model, tea.Cmd) {
 	// Validate: Name and URL required
 	if m.formData.Name == "" || m.formData.URL == "" {
@@ -192,12 +207,18 @@ func (m model) submitForm() (tea.Model, tea.Cmd) {
 	if m.formMode == "add" {
 		m.formMode = ""
 		m.formField = 0
-		return m, func() tea.Msg { return UpstreamAdded{Upstream: &m.formData} }
+		if m.OnUpstreamAdded != nil {
+			m.OnUpstreamAdded(&m.formData)
+		}
+		return m, nil
 	} else if m.formMode == "edit" {
 		oldName := m.upstreams[m.selectedIndex].Name
 		m.formMode = ""
 		m.formField = 0
-		return m, func() tea.Msg { return UpstreamUpdated{Upstream: &m.formData, OldName: oldName} }
+		if m.OnUpstreamUpdated != nil {
+			m.OnUpstreamUpdated(&m.formData, oldName)
+		}
+		return m, nil
 	}
 	return m, nil
 }
