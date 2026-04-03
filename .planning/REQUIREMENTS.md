@@ -46,11 +46,11 @@
 - [x] **TUI-02**: Display channel list with status (enabled/disabled) and request counts
 - [x] **TUI-03**: Display real-time request log with latency and token usage
 - [x] **TUI-04**: Display total usage statistics (tokens, requests, success rate)
-- [ ] **TUI-05**: Allow adding new upstream via TUI
-- [ ] **TUI-06**: Allow editing existing upstream via TUI
-- [ ] **TUI-07**: Allow deleting upstream via TUI
-- [ ] **TUI-08**: Support keyboard navigation (↑/↓ to select, a/e/d for actions)
-- [ ] **TUI-09**: Press q or ctrl+c to gracefully shutdown
+- [x] **TUI-05**: Allow adding new upstream via TUI
+- [x] **TUI-06**: Allow editing existing upstream via TUI
+- [x] **TUI-07**: Allow deleting upstream via TUI
+- [x] **TUI-08**: Support keyboard navigation (↑/↓ to select, a/e/d for actions)
+- [x] **TUI-09**: Press q or ctrl+c to gracefully shutdown
 
 ### Config Hot Reload
 
@@ -124,11 +124,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 | FAIL-02 | Phase 2 | Complete |
 | FAIL-03 | Phase 2 | Complete |
 | FAIL-04 | Phase 2 | Complete |
-| TUI-05 | Phase 2 | Pending |
-| TUI-06 | Phase 2 | Pending |
-| TUI-07 | Phase 2 | Pending |
-| TUI-08 | Phase 2 | Pending |
-| TUI-09 | Phase 2 | Pending |
+| TUI-05 | Phase 2 | Complete |
+| TUI-06 | Phase 2 | Complete |
+| TUI-07 | Phase 2 | Complete |
+| TUI-08 | Phase 2 | Complete |
+| TUI-09 | Phase 2 | Complete |
 | USAGE-01 | Phase 3 | Pending |
 | USAGE-02 | Phase 3 | Pending |
 | USAGE-03 | Phase 3 | Pending |
