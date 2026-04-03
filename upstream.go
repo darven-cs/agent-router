@@ -55,3 +55,22 @@ func (lb LoadBalancer) Select(hashInput string) *Upstream {
 func (lb LoadBalancer) GetEnabled() []*Upstream {
 	return lb.upstreams
 }
+
+// SelectNext returns the next upstream after 'after', wrapping to first if at end.
+// Returns nil if no upstreams available.
+func (lb LoadBalancer) SelectNext(after *Upstream) *Upstream {
+	if len(lb.upstreams) == 0 {
+		return nil
+	}
+	if after == nil {
+		return lb.upstreams[0]
+	}
+	for i, us := range lb.upstreams {
+		if us == after {
+			// Return next, wrapping to 0 if at end
+			next := (i + 1) % len(lb.upstreams)
+			return lb.upstreams[next]
+		}
+	}
+	return lb.upstreams[0] // 'after' not found, start from beginning
+}
