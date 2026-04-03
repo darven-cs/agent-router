@@ -16,10 +16,10 @@ Claude Code 请求永不中断 — 多上游自动切换保障可用性，负载
 - [x] 标准 Claude API：兼容官方 SDK，对外暴露 `/v1/messages` (Phase 1)
 - [x] 多渠道管理：动态添加/删除/启用/禁用上游渠道 (Phase 1)
 - [x] TUI 可视化界面：实时状态、日志、统计数据 (Phase 1)
+- [x] 故障切换：请求失败自动切换下一个上游，指数退避重试 (Phase 2)
 
 ### Active
 
-- [ ] 故障切换：请求失败自动切换下一个上游，指数退避重试 (Phase 2)
 - [ ] 配置热更新：SIGHUP / TUI 按钮 / API 触发重载 (Phase 3)
 - [ ] 用量监控：SQLite 持久化存储，TUI 实时展示 (Phase 3)
 
@@ -48,7 +48,7 @@ Claude Code 请求永不中断 — 多上游自动切换保障可用性，负载
 | Go 原生 net/http | 无框架、轻量、高性能 | ✓ Phase 1: implemented |
 | bubbletea + lipgloss TUI | 社区最流行轻量 TUI 库 | ✓ Phase 1: implemented |
 | 取模算法负载均衡 | O(1) 效率、哈希均匀分布 | ✓ Phase 1: implemented |
-| 指数退避重试 | 简单可靠，避免雪崩 | Phase 2 |
+| 指数退避重试 | 简单可靠，避免雪崩 | ✓ Phase 2: implemented |
 
 ## Evolution
 
@@ -68,4 +68,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-03 after Phase 1 completion*
+*Last updated: 2026-04-04 after Phase 2 completion*
