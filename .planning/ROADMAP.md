@@ -23,7 +23,8 @@ Agent Router is a local API proxy that routes Claude Code requests to multiple u
   4. TUI shows service name, version, port, and list of configured upstreams with enabled/disabled status
   5. Request log in TUI shows each request with latency and upstream response status
   6. Load balancer distributes requests evenly across enabled upstreams using modulo hash
-**Plans**: TBD
+**Plans**: 1 plan
+- [ ] 01-01-PLAN.md - Initialize project with working API proxy and basic TUI
 
 ### Phase 2: Resilience
 **Goal**: Claude Code requests never fail due to upstream issues - automatic failover保障可用性
