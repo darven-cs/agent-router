@@ -2,6 +2,7 @@ package main
 
 import (
 	"hash/fnv"
+	"sync"
 	"time"
 )
 
@@ -73,4 +74,83 @@ func (lb LoadBalancer) SelectNext(after *Upstream) *Upstream {
 		}
 	}
 	return lb.upstreams[0] // 'after' not found, start from beginning
+}
+
+// SharedUpstreams is thread-safe shared state for upstreams that both
+// TUI and ProxyHandler reference. Protected by RWMutex.
+type SharedUpstreams struct {
+	mu        sync.RWMutex
+	upstreams []*Upstream
+}
+
+// NewSharedUpstreams creates a new SharedUpstreams instance
+func NewSharedUpstreams(upstreams []*Upstream) *SharedUpstreams {
+	return &SharedUpstreams{upstreams: upstreams}
+}
+
+// GetAll returns a copy of all upstreams
+func (s *SharedUpstreams) GetAll() []*Upstream {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	result := make([]*Upstream, len(s.upstreams))
+	copy(result, s.upstreams)
+	return result
+}
+
+// Add adds a new upstream
+func (s *SharedUpstreams) Add(u *Upstream) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.upstreams = append(s.upstreams, u)
+}
+
+// Update updates an existing upstream by name
+func (s *SharedUpstreams) Update(name string, u *Upstream) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i, us := range s.upstreams {
+		if us.Name == name {
+			s.upstreams[i] = u
+			return true
+		}
+	}
+	return false
+}
+
+// Delete removes an upstream by name
+func (s *SharedUpstreams) Delete(name string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i, us := range s.upstreams {
+		if us.Name == name {
+			s.upstreams = append(s.upstreams[:i], s.upstreams[i+1:]...)
+			return true
+		}
+	}
+	return false
+}
+
+// AddUpstream adds an upstream to the load balancer
+func (lb *LoadBalancer) AddUpstream(u *Upstream) {
+	lb.upstreams = append(lb.upstreams, u)
+}
+
+// UpdateUpstream updates an existing upstream in the load balancer
+func (lb *LoadBalancer) UpdateUpstream(u *Upstream) {
+	for i, us := range lb.upstreams {
+		if us.Name == u.Name {
+			lb.upstreams[i] = u
+			return
+		}
+	}
+}
+
+// DeleteUpstream removes an upstream from the load balancer
+func (lb *LoadBalancer) DeleteUpstream(name string) {
+	for i, us := range lb.upstreams {
+		if us.Name == name {
+			lb.upstreams = append(lb.upstreams[:i], lb.upstreams[i+1:]...)
+			return
+		}
+	}
 }
