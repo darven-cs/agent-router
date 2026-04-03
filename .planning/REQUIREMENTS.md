@@ -116,24 +116,24 @@ Which phases cover which requirements. Updated during roadmap creation.
 | LB-01 | Phase 1 | Pending |
 | LB-02 | Phase 1 | Pending |
 | LB-03 | Phase 1 | Pending |
+| TUI-01 | Phase 1 | Pending |
+| TUI-02 | Phase 1 | Pending |
+| TUI-03 | Phase 1 | Pending |
+| TUI-04 | Phase 1 | Pending |
 | FAIL-01 | Phase 2 | Pending |
 | FAIL-02 | Phase 2 | Pending |
 | FAIL-03 | Phase 2 | Pending |
 | FAIL-04 | Phase 2 | Pending |
+| TUI-05 | Phase 2 | Pending |
+| TUI-06 | Phase 2 | Pending |
+| TUI-07 | Phase 2 | Pending |
+| TUI-08 | Phase 2 | Pending |
+| TUI-09 | Phase 2 | Pending |
 | USAGE-01 | Phase 3 | Pending |
 | USAGE-02 | Phase 3 | Pending |
 | USAGE-03 | Phase 3 | Pending |
 | USAGE-04 | Phase 3 | Pending |
 | USAGE-05 | Phase 3 | Pending |
-| TUI-01 | Phase 1 | Pending |
-| TUI-02 | Phase 1 | Pending |
-| TUI-03 | Phase 1 | Pending |
-| TUI-04 | Phase 1 | Pending |
-| TUI-05 | Phase 1 | Pending |
-| TUI-06 | Phase 1 | Pending |
-| TUI-07 | Phase 1 | Pending |
-| TUI-08 | Phase 1 | Pending |
-| TUI-09 | Phase 1 | Pending |
 | CONF-01 | Phase 3 | Pending |
 | CONF-02 | Phase 3 | Pending |
 | CONF-03 | Phase 3 | Pending |
@@ -144,10 +144,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | ADMIN-02 | Phase 3 | Pending |
 
 **Coverage:**
-- v1 requirements: 36 total
-- Mapped to phases: 36
-- Unmapped: 0 ✓
+- v1 requirements: 37 total
+- Mapped to phases: 37
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-04-03*
-*Last updated: 2026-04-03 after initial definition*
+*Last updated: 2026-04-03 after roadmap creation*
