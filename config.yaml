@@ -1,0 +1,27 @@
+service:
+  name: "Agent Router"
+  version: "1.0.0"
+  port: 8080
+  api_key: "${AGENT_ROUTER_API_KEY}"  # Env var expansion
+
+upstreams:
+  - name: "Zhipu"
+    url: "https://open.bigmodel.cn/api/paas/v4/messages"
+    api_key: "${ZHIPU_API_KEY}"
+    auth_type: "bearer"  # bearer or x-api-key
+    enabled: true
+    timeout: 30
+
+  - name: "Aicodee"
+    url: "https://api.aicodee.com/v1/messages"
+    api_key: "${AICODEE_API_KEY}"
+    auth_type: "x-api-key"
+    enabled: true
+    timeout: 30
+
+  - name: "Minimax"
+    url: "https://api.minimax.chat/v1/messages"
+    api_key: "${MINIMAX_API_KEY}"
+    auth_type: "bearer"
+    enabled: true
+    timeout: 30
