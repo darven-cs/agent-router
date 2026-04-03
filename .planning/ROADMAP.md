@@ -6,7 +6,7 @@ Agent Router is a local API proxy that routes Claude Code requests to multiple u
 
 ## Phases
 
-- [ ] **Phase 1: Foundation** - Core API proxy with single upstream routing and basic TUI status display
+- [x] **Phase 1: Foundation** - Core API proxy with single upstream routing and basic TUI status display
 - [ ] **Phase 2: Resilience** - Automatic failover with exponential backoff and full TUI upstream management
 - [ ] **Phase 3: Persistence** - SQLite usage tracking, config hot reload, and admin API
 
@@ -39,7 +39,9 @@ Agent Router is a local API proxy that routes Claude Code requests to multiple u
   6. User can delete upstream via TUI (d key) with confirmation
   7. User can navigate upstreams with arrow keys and perform actions with keyboard shortcuts
   8. Press q or ctrl+c triggers graceful shutdown with TUI shutdown confirmation
-**Plans**: TBD
+**Plans**: 2 plans
+- [ ] 02-01-PLAN.md - Failover logic with exponential backoff retry (Wave 1)
+- [ ] 02-02-PLAN.md - TUI upstream management and graceful shutdown (Wave 2)
 
 ### Phase 3: Persistence
 **Goal**: Usage data persisted to SQLite, config hot reload, admin API for operations
@@ -65,6 +67,6 @@ Phases execute in numeric order: 1 → 2 → 3
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation | 0/? | Not started | - |
-| 2. Resilience | 0/? | Not started | - |
+| 1. Foundation | 1/1 | Completed | 2026-04-04 |
+| 2. Resilience | 0/2 | In progress | - |
 | 3. Persistence | 0/? | Not started | - |
