@@ -40,7 +40,7 @@ Agent Router is a local API proxy that routes Claude Code requests to multiple u
   7. User can navigate upstreams with arrow keys and perform actions with keyboard shortcuts
   8. Press q or ctrl+c triggers graceful shutdown with TUI shutdown confirmation
 **Plans**: 2 plans
-- [ ] 02-01-PLAN.md - Failover logic with exponential backoff retry (Wave 1)
+- [x] 02-01-PLAN.md - Failover logic with exponential backoff retry (Wave 1)
 - [ ] 02-02-PLAN.md - TUI upstream management and graceful shutdown (Wave 2)
 
 ### Phase 3: Persistence
@@ -68,5 +68,5 @@ Phases execute in numeric order: 1 → 2 → 3
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundation | 1/1 | Completed | 2026-04-04 |
-| 2. Resilience | 0/2 | In progress | - |
+| 2. Resilience | 1/2 | In Progress|  |
 | 3. Persistence | 0/? | Not started | - |

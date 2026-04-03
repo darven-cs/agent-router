@@ -27,10 +27,10 @@
 
 ### Failover
 
-- [ ] **FAIL-01**: On 5xx or timeout, automatically switch to next upstream
-- [ ] **FAIL-02**: Retry with exponential backoff (1s → 2s → 4s)
-- [ ] **FAIL-03**: Maximum 3 retries per request
-- [ ] **FAIL-04**: If all upstreams fail, return proper error with code 1001
+- [x] **FAIL-01**: On 5xx or timeout, automatically switch to next upstream
+- [x] **FAIL-02**: Retry with exponential backoff (1s → 2s → 4s)
+- [x] **FAIL-03**: Maximum 3 retries per request
+- [x] **FAIL-04**: If all upstreams fail, return proper error with code 1001
 
 ### Usage Tracking
 
@@ -120,10 +120,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | TUI-02 | Phase 1 | Complete |
 | TUI-03 | Phase 1 | Complete |
 | TUI-04 | Phase 1 | Complete |
-| FAIL-01 | Phase 2 | Pending |
-| FAIL-02 | Phase 2 | Pending |
-| FAIL-03 | Phase 2 | Pending |
-| FAIL-04 | Phase 2 | Pending |
+| FAIL-01 | Phase 2 | Complete |
+| FAIL-02 | Phase 2 | Complete |
+| FAIL-03 | Phase 2 | Complete |
+| FAIL-04 | Phase 2 | Complete |
 | TUI-05 | Phase 2 | Pending |
 | TUI-06 | Phase 2 | Pending |
 | TUI-07 | Phase 2 | Pending |
