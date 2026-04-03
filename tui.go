@@ -1,0 +1,122 @@
+package main
+
+import (
+	"fmt"
+	"time"
+
+	"github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+)
+
+// Style definitions
+var (
+	stylePrimary   = lipgloss.NewStyle().Foreground(lipgloss.Color("99"))
+	styleSecondary = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+	styleSuccess   = lipgloss.NewStyle().Foreground(lipgloss.Color("82"))
+	styleError     = lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
+	styleBold      = lipgloss.NewStyle().Bold(true)
+	styleHeader    = lipgloss.NewStyle().Foreground(lipgloss.Color("99")).Bold(true)
+)
+
+// model holds all TUI state
+type model struct {
+	serviceName  string
+	version      string
+	port         int
+	startTime    time.Time
+	upstreams    []*Upstream
+	logs         []RequestLog
+	requestCount int64
+	successCount int64
+}
+
+// NewModel creates a new TUI model
+func NewModel(serviceName, version string, port int, upstreams []*Upstream) model {
+	return model{
+		serviceName: serviceName,
+		version:     version,
+		port:        port,
+		startTime:   time.Now(),
+		upstreams:   upstreams,
+		logs:        make([]RequestLog, 0, 50),
+	}
+}
+
+// Init initializes the TUI model
+func (m model) Init() tea.Cmd {
+	return nil
+}
+
+// Update handles TUI messages
+func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "q", "ctrl+c":
+			return m, tea.Quit
+		}
+	case RequestLog:
+		m.logs = append(m.logs, msg)
+		if len(m.logs) > 50 {
+			m.logs = m.logs[1:]
+		}
+		m.requestCount++
+		if msg.StatusCode >= 200 && msg.StatusCode < 400 {
+			m.successCount++
+		}
+	}
+	return m, nil
+}
+
+// View renders the TUI
+func (m model) View() string {
+	var s string
+
+	// Header
+	s += styleHeader.Render("╭─────────────────────────────────────────────────╮\n")
+	s += styleHeader.Render(fmt.Sprintf("│ %s v%s                              │\n", m.serviceName, m.version))
+	s += styleHeader.Render(fmt.Sprintf("│ Port: %d  |  Uptime: %s           │\n", m.port, time.Since(m.startTime).String()))
+	s += styleHeader.Render("╰─────────────────────────────────────────────────╯\n\n")
+
+	// Upstream list
+	s += styleBold.Render("Upstreams:\n")
+	for _, us := range m.upstreams {
+		status := styleSuccess.Render("● enabled")
+		if !us.Enabled {
+			status = styleError.Render("○ disabled")
+		}
+		s += fmt.Sprintf("  %s %s [%s]\n", us.Name, status, us.AuthType)
+	}
+	s += "\n"
+
+	// Request log
+	s += styleBold.Render("Request Log:\n")
+	if len(m.logs) == 0 {
+		s += styleSecondary.Render("  (no requests yet)\n")
+	} else {
+		for _, log := range m.logs {
+			statusStr := fmt.Sprintf("%d", log.StatusCode)
+			if log.StatusCode == 0 {
+				statusStr = "ERR"
+			}
+			s += fmt.Sprintf("  %s | %4dms | %s | %s\n",
+				log.Timestamp.Format("15:04:05"),
+				log.LatencyMs,
+				log.UpstreamName,
+				statusStr)
+		}
+	}
+	s += "\n"
+
+	// Stats
+	s += styleBold.Render("Statistics:\n")
+	total := m.requestCount
+	success := m.successCount
+	rate := float64(0)
+	if total > 0 {
+		rate = float64(success) / float64(total) * 100
+	}
+	s += fmt.Sprintf("  Total: %d | Success: %d | Rate: %.1f%%\n", total, success, rate)
+
+	return s
+}
