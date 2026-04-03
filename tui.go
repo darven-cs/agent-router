@@ -16,6 +16,8 @@ var (
 	styleError     = lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
 	styleBold      = lipgloss.NewStyle().Bold(true)
 	styleHeader    = lipgloss.NewStyle().Foreground(lipgloss.Color("99")).Bold(true)
+	styleFormActive = lipgloss.NewStyle().Foreground(lipgloss.Color("82")).Bold(true)
+	styleWarning   = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
 )
 
 // model holds all TUI state
@@ -28,17 +30,32 @@ type model struct {
 	logs         []RequestLog
 	requestCount int64
 	successCount int64
+
+	// Navigation state
+	selectedIndex int
+
+	// Form state
+	formMode  string    // "", "add", "edit"
+	formData  Upstream  // Form working copy
+	formField int       // Current field index (0-5)
+
+	// Confirmation mode
+	confirmMode bool
+	confirmType string // "delete" or "shutdown"
 }
 
 // NewModel creates a new TUI model
 func NewModel(serviceName, version string, port int, upstreams []*Upstream) model {
 	return model{
-		serviceName: serviceName,
-		version:     version,
-		port:        port,
-		startTime:   time.Now(),
-		upstreams:   upstreams,
-		logs:        make([]RequestLog, 0, 50),
+		serviceName:  serviceName,
+		version:      version,
+		port:         port,
+		startTime:    time.Now(),
+		upstreams:    upstreams,
+		logs:         make([]RequestLog, 0, 50),
+		selectedIndex: 0,
+		formMode:      "",
+		confirmMode:   false,
 	}
 }
 
@@ -51,9 +68,42 @@ func (m model) Init() tea.Cmd {
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		if m.confirmMode {
+			return m.handleConfirm(msg)
+		}
+		if m.formMode != "" {
+			return m.handleFormInput(msg)
+		}
+		// Navigation mode
 		switch msg.String() {
+		case "up":
+			if m.selectedIndex > 0 {
+				m.selectedIndex--
+			}
+		case "down":
+			if m.selectedIndex < len(m.upstreams)-1 {
+				m.selectedIndex++
+			}
+		case "a":
+			m.formMode = "add"
+			m.formData = Upstream{Enabled: true, Timeout: 30 * time.Second, AuthType: "bearer"}
+			m.formField = 0
+		case "e", "enter":
+			if len(m.upstreams) > 0 {
+				m.formMode = "edit"
+				m.formData = *m.upstreams[m.selectedIndex]
+				m.formField = 0
+			}
+		case "d":
+			if len(m.upstreams) > 0 {
+				m.confirmMode = true
+				m.confirmType = "delete"
+			}
 		case "q", "ctrl+c":
-			return m, tea.Quit
+			m.confirmMode = true
+			m.confirmType = "shutdown"
+		case "esc":
+			// No form to cancel in navigation mode
 		}
 	case RequestLog:
 		m.logs = append(m.logs, msg)
@@ -65,6 +115,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.successCount++
 		}
 	}
+	return m, nil
+}
+
+// handleConfirm processes confirmation dialog input
+func (m model) handleConfirm(msg tea.Msg) (tea.Model, tea.Cmd) {
+	return m, nil
+}
+
+// handleFormInput processes form input
+func (m model) handleFormInput(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
