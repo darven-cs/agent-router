@@ -22,6 +22,8 @@ type RequestLog struct {
 	UpstreamName  string
 	StatusCode    int
 	RequestID     string
+	RetryAttempt  int // Current retry attempt (0=initial, 1+=retries)
+	RetryCount    int // Total retries for this request
 }
 
 // NewProxyHandler creates a new proxy handler
@@ -107,14 +109,14 @@ func (h *ProxyHandler) proxyRequest(w http.ResponseWriter, r *http.Request, upst
 	latencyMs := time.Since(start).Milliseconds()
 
 	if err != nil {
-		h.logToChan(requestID, latencyMs, upstream.Name, 0)
+		h.logToChan(requestID, latencyMs, upstream.Name, 0, 0, 0)
 		h.writeError(w, http.StatusBadGateway, "upstream_error", err.Error(), 1001)
 		return
 	}
 	defer resp.Body.Close()
 
 	// Copy response to client
-	h.logToChan(requestID, latencyMs, upstream.Name, resp.StatusCode)
+	h.logToChan(requestID, latencyMs, upstream.Name, resp.StatusCode, 0, 0)
 
 	w.WriteHeader(resp.StatusCode)
 	io.Copy(w, resp.Body)
@@ -135,7 +137,7 @@ func (h *ProxyHandler) writeError(w http.ResponseWriter, status int, errType, me
 	json.NewEncoder(w).Encode(errResp)
 }
 
-func (h *ProxyHandler) logToChan(requestID string, latencyMs int64, upstreamName string, statusCode int) {
+func (h *ProxyHandler) logToChan(requestID string, latencyMs int64, upstreamName string, statusCode int, retryAttempt, retryCount int) {
 	if h.logChan != nil {
 		h.logChan <- RequestLog{
 			Timestamp:    time.Now(),
@@ -143,6 +145,8 @@ func (h *ProxyHandler) logToChan(requestID string, latencyMs int64, upstreamName
 			UpstreamName: upstreamName,
 			StatusCode:   statusCode,
 			RequestID:    requestID,
+			RetryAttempt: retryAttempt,
+			RetryCount:   retryCount,
 		}
 	}
 }
