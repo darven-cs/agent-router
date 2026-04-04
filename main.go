@@ -11,6 +11,12 @@ import (
 	"time"
 
 	"github.com/charmbracelet/bubbletea"
+	"gorm.io/gorm"
+)
+
+var (
+	db        *gorm.DB
+	usageChan chan RequestLog
 )
 
 func main() {
@@ -49,8 +55,24 @@ func main() {
 	// Create log channel for request updates
 	logChan := make(chan RequestLog, 100)
 
+	// Create usage channel for SQLite persistence
+	usageChan = make(chan RequestLog, 100)
+
+	// Initialize SQLite for usage tracking
+	dbPath := filepath.Join(filepath.Dir(execPath), "usage.db")
+	db, err = initDB(dbPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to init usage DB: %v\n", err)
+		// Continue without usage tracking - non-fatal
+	}
+
+	// Start usage worker goroutine
+	if db != nil {
+		go StartUsageWorker(db, usageChan)
+	}
+
 	// Create proxy handler
-	proxyHandler := NewProxyHandler(lb, cfg.Service.APIKey, logChan)
+	proxyHandler := NewProxyHandler(lb, cfg.Service.APIKey, logChan, usageChan)
 
 	// Create TUI model with callbacks for upstream changes
 	tuiModel := NewModel(cfg.Service.Name, cfg.Service.Version, cfg.Service.Port, sharedUpstreams.GetAll())
@@ -105,6 +127,10 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Shutdown error (forcing close): %v\n", err)
 		server.Close()
 	}
+
+	// Close usage channel to signal worker to stop
+	close(usageChan)
+
 	fmt.Println("Goodbye!")
 }
 
