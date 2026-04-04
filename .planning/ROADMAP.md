@@ -58,7 +58,10 @@ Agent Router is a local API proxy that routes Claude Code requests to multiple u
   8. Upstream channels can be removed dynamically without restart
   9. Channels can be enabled/disabled dynamically without restart
   10. GET /admin/status returns service status and usage statistics
-**Plans**: TBD
+**Plans**: 3 plans
+- [ ] 03-01-PLAN.md - SQLite usage tracking with async writes (Wave 1)
+- [ ] 03-02-PLAN.md - Config hot reload via SIGHUP/TUI/API (Wave 2)
+- [ ] 03-03-PLAN.md - Admin API endpoints /admin/status and /admin/reload (Wave 2)
 
 ## Progress
 
@@ -69,4 +72,4 @@ Phases execute in numeric order: 1 → 2 → 3
 |-------|----------------|--------|-----------|
 | 1. Foundation | 1/1 | Completed | 2026-04-04 |
 | 2. Resilience | 1/2 | In Progress|  |
-| 3. Persistence | 0/? | Not started | - |
+| 3. Persistence | 0/3 | Not started | - |
