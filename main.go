@@ -126,6 +126,7 @@ func main() {
 	}
 	tuiModel.OnUpstreamModelSelected = func(u *Upstream) {
 		sharedUpstreams.Update(u.Name, u)
+		lb.UpdateUpstream(u)
 		if err := persistConfig(); err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to persist upstream model: %v\n", err)
 		}
