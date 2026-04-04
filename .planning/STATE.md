@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
-stopped_at: Completed 03-persistence-03-PLAN.md
-last_updated: "2026-04-04T04:38:08.664Z"
+status: gap_closure
+stopped_at: Created 03-04-PLAN.md for gap closure
+last_updated: "2026-04-04T05:00:00.000Z"
 last_activity: 2026-04-04
 progress:
   total_phases: 3
-  completed_phases: 2
-  total_plans: 6
-  completed_plans: 5
+  completed_phases: 3
+  total_plans: 7
+  completed_plans: 6
   percent: 0
 ---
 
@@ -21,16 +21,25 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-03)
 
 **Core value:** Claude Code 请求永不中断 — 多上游自动切换保障可用性，负载均衡优化成本
-**Current focus:** Phase 03 — persistence
+**Current focus:** Phase 03 — persistence (gap closure)
 
 ## Current Position
 
-Phase: 03 (persistence) — EXECUTING
-Plan: 3 of 3
-Status: Ready to execute
+Phase: 03 (persistence) — GAP CLOSURE
+Plan: 4 of 4
+Status: Gap closure planning complete
 Last activity: 2026-04-04
 
 Progress: [░░░░░░░░░░] 0%
+
+## Gap Closure Summary
+
+**Phase 03 verification found 3 partial requirements (CONF-04, CONF-05, CONF-06):**
+- Root cause: TUI add/edit/delete/enable/disable changes modify sharedUpstreams and lb in-memory, but doReload() reinitializes from config.yaml on SIGHUP, losing runtime changes.
+- Fix: Implement config write-back via SaveConfig() function
+
+**Created:**
+- 03-04-PLAN.md: Config write-back to persist TUI changes to config.yaml
 
 ## Performance Metrics
 
@@ -56,6 +65,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 02-resilience P01 | 3 | 3 tasks | 2 files |
 | Phase 03-persistence P01 | 3 | 3 tasks | 3 files |
 | Phase 03 P03 | 6 | 3 tasks | 4 files |
+| Phase 03 P02 | 10 | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -72,6 +82,7 @@ Recent decisions affecting current work:
 - [Phase 02-resilience]: isRetryable returns false by default, true only for timeout/5xx/429 per D-01
 - [Phase 03-persistence]: SQLite writes via single goroutine draining channel (avoids database locked errors)
 - [Phase 03]: Admin endpoints use same auth as /v1/messages (x-api-key or Bearer token)
+- [Phase 03-gaps]: Config write-back via SaveConfig() to persist TUI changes to config.yaml
 
 ### Pending Todos
 
@@ -87,6 +98,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-04T04:38:08.652Z
-Stopped at: Completed 03-persistence-03-PLAN.md
+Last session: 2026-04-04T05:00:00.000Z
+Stopped at: Created 03-04-PLAN.md for gap closure
 Resume file: None
