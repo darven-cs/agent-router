@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"io/ioutil"
 	"net/http"
 	"net/url"
 	"strings"
@@ -19,9 +20,10 @@ const (
 
 // ProxyHandler manages HTTP proxying with authentication
 type ProxyHandler struct {
-	lb      LoadBalancer
-	apiKey  string
-	logChan chan<- RequestLog
+	lb        LoadBalancer
+	apiKey    string
+	logChan   chan<- RequestLog  // For TUI display (no tokens)
+	usageChan chan<- RequestLog  // For SQLite persistence (with tokens)
 }
 
 // RequestLog records a single request's details
@@ -33,14 +35,17 @@ type RequestLog struct {
 	RequestID     string
 	RetryAttempt  int // Current retry attempt (0=initial, 1+=retries)
 	RetryCount    int // Total retries for this request
+	InputTokens   int // Tokens in request
+	OutputTokens  int // Tokens in response
 }
 
 // NewProxyHandler creates a new proxy handler
-func NewProxyHandler(lb LoadBalancer, apiKey string, logChan chan RequestLog) *ProxyHandler {
+func NewProxyHandler(lb LoadBalancer, apiKey string, logChan chan RequestLog, usageChan chan RequestLog) *ProxyHandler {
 	return &ProxyHandler{
-		lb:      lb,
-		apiKey:  apiKey,
-		logChan: logChan,
+		lb:        lb,
+		apiKey:    apiKey,
+		logChan:   logChan,
+		usageChan: usageChan,
 	}
 }
 
@@ -115,11 +120,34 @@ func (h *ProxyHandler) proxyRequest(w http.ResponseWriter, r *http.Request, upst
 	}
 	defer resp.Body.Close()
 
-	// Copy response to client
-	h.logToChan(requestID, latencyMs, upstream.Name, resp.StatusCode, retryAttempt, retryCount)
+	// Buffer the response body for token extraction
+	bodyBytes, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		h.logToChan(requestID, latencyMs, upstream.Name, resp.StatusCode, retryAttempt, retryCount)
+		return err, resp.StatusCode
+	}
 
+	// Extract usage tokens from Claude API response
+	var inputTokens, outputTokens int
+	var respData map[string]interface{}
+	if err := json.Unmarshal(bodyBytes, &respData); err == nil {
+		if usage, ok := respData["usage"].(map[string]interface{}); ok {
+			if v, ok := usage["input_tokens"].(float64); ok {
+				inputTokens = int(v)
+			}
+			if v, ok := usage["output_tokens"].(float64); ok {
+				outputTokens = int(v)
+			}
+		}
+	}
+
+	// Log with tokens (both TUI and SQLite channels)
+	h.logToChan(requestID, latencyMs, upstream.Name, resp.StatusCode, retryAttempt, retryCount)
+	h.logToChanWithTokens(requestID, latencyMs, upstream.Name, resp.StatusCode, retryAttempt, retryCount, inputTokens, outputTokens)
+
+	// Write response to client
 	w.WriteHeader(resp.StatusCode)
-	io.Copy(w, resp.Body)
+	w.Write(bodyBytes)
 	return nil, resp.StatusCode
 }
 
@@ -219,6 +247,22 @@ func (h *ProxyHandler) logToChan(requestID string, latencyMs int64, upstreamName
 			RequestID:    requestID,
 			RetryAttempt: retryAttempt,
 			RetryCount:   retryCount,
+		}
+	}
+}
+
+func (h *ProxyHandler) logToChanWithTokens(requestID string, latencyMs int64, upstreamName string, statusCode int, retryAttempt, retryCount, inputTokens, outputTokens int) {
+	if h.usageChan != nil {
+		h.usageChan <- RequestLog{
+			Timestamp:    time.Now(),
+			LatencyMs:    latencyMs,
+			UpstreamName: upstreamName,
+			StatusCode:   statusCode,
+			RequestID:    requestID,
+			RetryAttempt: retryAttempt,
+			RetryCount:   retryCount,
+			InputTokens:  inputTokens,
+			OutputTokens: outputTokens,
 		}
 	}
 }
