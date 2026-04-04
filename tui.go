@@ -101,10 +101,14 @@ var (
 type UpstreamAdded struct{ Upstream *Upstream }
 type UpstreamUpdated struct{ Upstream *Upstream; OldName string }
 type UpstreamDeleted struct{ Name string }
+type UpstreamToggled struct{ Upstream *Upstream } // For enable/disable toggle
 
 // Message types for reload
 type ReloadRequest struct{}
 type ReloadComplete struct{ Error error }
+
+// Message types for model selection
+type ModelSelected struct{ Model string }
 
 // model holds all TUI state
 type model struct {
@@ -116,6 +120,7 @@ type model struct {
 	logs         []RequestLog
 	requestCount int64
 	successCount int64
+	defaultModel string // Current default model
 
 	// Window size for responsive layout
 	width  int
@@ -129,31 +134,38 @@ type model struct {
 	formData  Upstream  // Form working copy
 	formField int       // Current field index (0-5)
 
+	// Model selection mode
+	modelSelectMode bool
+
 	// Confirmation mode
 	confirmMode bool
 	confirmType string // "delete" or "shutdown"
 
 	// Callback for upstream changes
-	OnUpstreamAdded   func(*Upstream)
-	OnUpstreamUpdated func(*Upstream, string) // upstream, oldName
-	OnUpstreamDeleted func(string)           // name
-	OnReload          func() error          // Config reload callback
+	OnUpstreamAdded    func(*Upstream)
+	OnUpstreamUpdated  func(*Upstream, string) // upstream, oldName
+	OnUpstreamDeleted  func(string)            // name
+	OnUpstreamToggled  func(*Upstream)         // for enable/disable
+	OnDefaultModelChanged   func(string)   // new global default model
+	OnUpstreamModelSelected func(*Upstream) // upstream whose model was selected
+	OnReload               func() error   // Config reload callback
 }
 
 // NewModel creates a new TUI model
 func NewModel(serviceName, version string, port int, upstreams []*Upstream) model {
 	return model{
-		serviceName:  serviceName,
-		version:      version,
-		port:         port,
-		startTime:    time.Now(),
-		upstreams:    upstreams,
-		logs:         make([]RequestLog, 0, 50),
-		selectedIndex: 0,
-		formMode:      "",
-		confirmMode:   false,
-		width:         80,  // default
-		height:        24,  // default
+		serviceName:     serviceName,
+		version:         version,
+		port:            port,
+		startTime:       time.Now(),
+		upstreams:       upstreams,
+		logs:            make([]RequestLog, 0, 50),
+		selectedIndex:   0,
+		formMode:        "",
+		confirmMode:     false,
+		modelSelectMode: false,
+		width:           80,  // default
+		height:          24,  // default
 	}
 }
 
@@ -176,6 +188,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.formMode != "" {
 			return m.handleFormInput(msg)
 		}
+		if m.modelSelectMode {
+			return m.handleModelSelect(msg)
+		}
 		// Navigation mode
 		switch msg.String() {
 		case "up":
@@ -186,6 +201,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.selectedIndex < len(m.upstreams)-1 {
 				m.selectedIndex++
 			}
+		case " ":
+			// Toggle upstream enabled/disabled
+			if len(m.upstreams) > 0 && m.OnUpstreamToggled != nil {
+				us := m.upstreams[m.selectedIndex]
+				us.Enabled = !us.Enabled
+				m.OnUpstreamToggled(us)
+			}
+		case "m":
+			// Enter model selection mode
+			m.modelSelectMode = true
 		case "a":
 			m.formMode = "add"
 			m.formData = Upstream{Enabled: true, Timeout: 30 * time.Second, AuthType: "bearer"}
@@ -260,6 +285,60 @@ func (m model) handleConfirm(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// handleModelSelect processes model selection input
+func (m model) handleModelSelect(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if msg, ok := msg.(tea.KeyMsg); ok {
+		switch msg.String() {
+		case "up":
+			if m.selectedIndex > 0 {
+				m.selectedIndex--
+			}
+		case "down":
+			if m.selectedIndex < len(m.upstreams)-1 {
+				m.selectedIndex++
+			}
+		case "enter":
+			// Select the model from current upstream
+			if len(m.upstreams) > 0 {
+				us := m.upstreams[m.selectedIndex]
+				if us.Model != "" {
+					m.defaultModel = us.Model
+					// Save model to upstream and notify
+					us.Model = m.defaultModel
+					if m.OnUpstreamModelSelected != nil {
+						m.OnUpstreamModelSelected(us)
+					}
+					if m.OnDefaultModelChanged != nil {
+						m.OnDefaultModelChanged(us.Model)
+					}
+				}
+			}
+			m.modelSelectMode = false
+		case "esc":
+			m.modelSelectMode = false
+		case "0", "1", "2", "3", "4", "5", "6", "7", "8", "9":
+			// Direct number selection
+			idx := int(msg.Runes[0] - '0')
+			if idx < len(m.upstreams) {
+				us := m.upstreams[idx]
+				if us.Model != "" {
+					m.defaultModel = us.Model
+					// Save model to upstream and notify
+					us.Model = m.defaultModel
+					if m.OnUpstreamModelSelected != nil {
+						m.OnUpstreamModelSelected(us)
+					}
+					if m.OnDefaultModelChanged != nil {
+						m.OnDefaultModelChanged(us.Model)
+					}
+				}
+			}
+			m.modelSelectMode = false
+		}
+	}
+	return m, nil
+}
+
 // handleFormInput processes form input
 func (m model) handleFormInput(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if msg, ok := msg.(tea.KeyMsg); ok {
@@ -269,11 +348,11 @@ func (m model) handleFormInput(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.formField--
 			}
 		case "down", "tab":
-			if m.formField < 5 {
+			if m.formField < 6 {
 				m.formField++
 			}
 		case "enter":
-			if m.formField < 5 {
+			if m.formField < 6 {
 				m.formField++
 			} else {
 				return m.submitForm()
@@ -338,6 +417,8 @@ func (m model) handleFormTextInput(msg tea.KeyMsg) model {
 			m.formData.Timeout = (m.formData.Timeout / time.Second) * time.Second
 			m.formData.Timeout += time.Duration(runes[0]-'0') * time.Second
 		}
+	case 6: // Model
+		m.formData.Model += string(runes[0])
 	}
 	return m
 }
@@ -356,6 +437,10 @@ func (m model) handleFormBackspace(msg tea.KeyMsg) model {
 	case 2: // APIKey
 		if len(m.formData.APIKey) > 0 {
 			m.formData.APIKey = m.formData.APIKey[:len(m.formData.APIKey)-1]
+		}
+	case 6: // Model
+		if len(m.formData.Model) > 0 {
+			m.formData.Model = m.formData.Model[:len(m.formData.Model)-1]
 		}
 	}
 	return m
@@ -392,6 +477,10 @@ func (m model) renderNavigation() string {
 	dimStyle := lipgloss.NewStyle().
 		Foreground(subtextColor)
 
+	modelStyle := lipgloss.NewStyle().
+		Foreground(tealColor).
+		Bold(true)
+
 	hintsStyle := lipgloss.NewStyle().
 			Foreground(tealColor)
 
@@ -401,11 +490,19 @@ func (m model) renderNavigation() string {
 		BorderForeground(mauveColor).
 		Padding(0, 1, 0, 1)
 
+	// Show current model in nav bar
+	modelStr := ""
+	if m.defaultModel != "" {
+		modelStr = modelStyle.Render(" " + m.defaultModel + " ")
+	}
+
 	content := lipgloss.JoinHorizontal(
 		lipgloss.Left,
 		infoStyle.Render(fmt.Sprintf(" %s v%s ", m.serviceName, m.version)),
-		dimStyle.Render(fmt.Sprintf("  Port: %d  Uptime: %s  ", m.port, time.Since(m.startTime).Round(time.Second))),
-		hintsStyle.Render(" [a]Add [e]Edit [d]Del [r]Reload [q]Quit "),
+		dimStyle.Render(fmt.Sprintf("  Port: %d  Uptime: %s", m.port, time.Since(m.startTime).Round(time.Second))),
+		modelStr,
+		dimStyle.Render("  "),
+		hintsStyle.Render("[a]Add [e]Edit [d]Del [m]Model [r]Reload [q]Quit "),
 	)
 
 	return nav.Render(content)
@@ -418,6 +515,9 @@ func (m model) renderContent() string {
 	}
 	if m.confirmMode {
 		return m.renderConfirmation()
+	}
+	if m.modelSelectMode {
+		return m.renderModelSelect()
 	}
 	return m.renderUpstreamList()
 }
@@ -467,6 +567,7 @@ func (m model) renderForm() string {
 		{"Auth", m.formData.AuthType + " (enter to toggle)", m.formField == 3},
 		{"Timeout", fmt.Sprintf("%d seconds", int(m.formData.Timeout/time.Second)), m.formField == 4},
 		{"Enabled", fmt.Sprintf("%v (enter to toggle)", m.formData.Enabled), m.formField == 5},
+		{"Model", m.formData.Model, m.formField == 6},
 	}
 
 	for i, field := range fields {
@@ -573,17 +674,92 @@ func (m model) renderUpstreamList() string {
 			if !us.Enabled {
 				status = disabledStyle.Render("○")
 			}
-			line := fmt.Sprintf("  %s %s [%s]", us.Name, status, us.AuthType)
+			modelStr := ""
+			if us.Model != "" {
+				modelStr = dimStyle.Render(" → " + us.Model)
+			}
+			line := fmt.Sprintf("  %s %s [%s]%s", us.Name, status, us.AuthType, modelStr)
 
 			if i == m.selectedIndex && !m.confirmMode {
-				lines = append(lines, selectedItemStyle.Render("▶ "+us.Name+"  "+enabledStyle.Render("[")+us.AuthType+enabledStyle.Render("]")))
+				lines = append(lines, selectedItemStyle.Render("▶ "+us.Name+" "+enabledStyle.Render("[")+us.AuthType+enabledStyle.Render("]")+modelStr))
 			} else {
 				lines = append(lines, itemStyle.Render(line))
 			}
 		}
 	}
 
-	lines = append(lines, dimStyle.Render("↑↓ Navigate | a Add | e Edit | d Delete | r Reload"))
+	lines = append(lines, dimStyle.Render("↑↓ Navigate | Space Toggle | a Add | e Edit | d Delete | m Model | r Reload"))
+
+	content := lipgloss.JoinVertical(
+		lipgloss.Top,
+		lines...,
+	)
+
+	return listStyle.Render(content)
+}
+
+// renderModelSelect renders the model selection view
+func (m model) renderModelSelect() string {
+	contentWidth := m.width - 4
+
+	headerStyle := lipgloss.NewStyle().
+		Foreground(mauveColor).
+		Bold(true).
+		Width(contentWidth)
+
+	listStyle := lipgloss.NewStyle().
+			Width(contentWidth).
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(greenColor).
+			Padding(1, 1, 0, 1)
+
+	itemStyle := lipgloss.NewStyle().
+			Foreground(textColor)
+
+	selectedItemStyle := lipgloss.NewStyle().
+			Background(selectedBg).
+			Foreground(selectedFg).
+			Bold(true)
+
+	enabledStyle := lipgloss.NewStyle().Foreground(greenColor)
+	disabledStyle := lipgloss.NewStyle().Foreground(redColor)
+	dimStyle := lipgloss.NewStyle().
+		Foreground(subtextColor)
+
+	var lines []string
+
+	lines = append(lines, headerStyle.Render("Select Default Model (ESC to cancel)"))
+
+	// Show current default model
+	if m.defaultModel != "" {
+		lines = append(lines, dimStyle.Render("  Current: "+m.defaultModel))
+		lines = append(lines, dimStyle.Render("  "))
+	}
+
+	if len(m.upstreams) == 0 {
+		lines = append(lines, dimStyle.Render("  (no upstreams configured)"))
+	} else {
+		for i, us := range m.upstreams {
+			status := enabledStyle.Render("●")
+			if !us.Enabled {
+				status = disabledStyle.Render("○")
+			}
+			modelStr := us.Model
+			if modelStr == "" {
+				modelStr = "(no model)"
+			}
+			line := fmt.Sprintf("  [%d] %s %s → %s", i, us.Name, status, modelStr)
+
+			if i == m.selectedIndex {
+				lines = append(lines, selectedItemStyle.Render("▶ "+line))
+			} else {
+				lines = append(lines, itemStyle.Render(line))
+			}
+		}
+	}
+
+	lines = append(lines, dimStyle.Render(""))
+	lines = append(lines, dimStyle.Render("↑↓ Select | Enter to choose | 0-9 Quick select"))
 
 	content := lipgloss.JoinVertical(
 		lipgloss.Top,

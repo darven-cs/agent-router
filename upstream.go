@@ -14,6 +14,7 @@ type Upstream struct {
 	AuthType string // "bearer" or "x-api-key"
 	Enabled  bool
 	Timeout  time.Duration
+	Model    string // upstream-specific model name (if empty, use request model)
 }
 
 // LoadBalancer distributes requests across enabled upstreams using modulo hash
@@ -35,6 +36,7 @@ func NewLoadBalancer(configs []UpstreamConfig) LoadBalancer {
 			AuthType: cfg.AuthType,
 			Enabled:  cfg.Enabled,
 			Timeout:  time.Duration(cfg.Timeout) * time.Second,
+			Model:    cfg.Model,
 		})
 	}
 	return LoadBalancer{upstreams: upstreams}

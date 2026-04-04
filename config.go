@@ -13,6 +13,7 @@ type ServiceConfig struct {
 	Version string `yaml:"version"`
 	Port    int    `yaml:"port"`
 	APIKey  string `yaml:"api_key"`
+	Model   string `yaml:"model"` // default model for all requests
 }
 
 // UpstreamConfig holds upstream provider configuration
@@ -22,12 +23,13 @@ type UpstreamConfig struct {
 	APIKey   string `yaml:"api_key"`
 	AuthType string `yaml:"auth_type"` // "bearer" or "x-api-key"
 	Enabled  bool   `yaml:"enabled"`
-	Timeout  int    `yaml:"timeout"` // seconds
+	Timeout  int    `yaml:"timeout"`   // seconds
+	Model    string `yaml:"model"`     // model name to use for this upstream (if empty, uses request model)
 }
 
 // Config holds the complete service configuration
 type Config struct {
-	Service   ServiceConfig   `yaml:"service"`
+	Service   ServiceConfig    `yaml:"service"`
 	Upstreams []UpstreamConfig `yaml:"upstreams"`
 }
 

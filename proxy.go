@@ -17,12 +17,35 @@ const (
 	maxDelay   = 4 * time.Second
 )
 
+// transformModelName replaces the model name in request JSON.
+// It uses the defaultModel if set, otherwise falls back to upstream-specific model.
+func transformModelName(body []byte, defaultModel, upstreamModel string) []byte {
+	var data map[string]interface{}
+	if err := json.Unmarshal(body, &data); err != nil {
+		return body
+	}
+
+	if _, ok := data["model"].(string); ok {
+		if defaultModel != "" {
+			// Use service default model
+			data["model"] = defaultModel
+		} else if upstreamModel != "" {
+			// Fall back to upstream-specific model
+			data["model"] = upstreamModel
+		}
+	}
+
+	out, _ := json.Marshal(data)
+	return out
+}
+
 // ProxyHandler manages HTTP proxying with authentication
 type ProxyHandler struct {
-	lb        LoadBalancer
-	apiKey    string
-	logChan   chan<- RequestLog  // For TUI display (no tokens)
-	usageChan chan<- RequestLog  // For SQLite persistence (with tokens)
+	lb          LoadBalancer
+	apiKey      string
+	defaultModel string // default model for all requests
+	logChan     chan<- RequestLog  // For TUI display (no tokens)
+	usageChan   chan<- RequestLog  // For SQLite persistence (with tokens)
 }
 
 // RequestLog records a single request's details
@@ -39,12 +62,13 @@ type RequestLog struct {
 }
 
 // NewProxyHandler creates a new proxy handler
-func NewProxyHandler(lb LoadBalancer, apiKey string, logChan chan RequestLog, usageChan chan RequestLog) *ProxyHandler {
+func NewProxyHandler(lb LoadBalancer, apiKey string, defaultModel string, logChan chan RequestLog, usageChan chan RequestLog) *ProxyHandler {
 	return &ProxyHandler{
-		lb:        lb,
-		apiKey:    apiKey,
-		logChan:   logChan,
-		usageChan: usageChan,
+		lb:          lb,
+		apiKey:      apiKey,
+		defaultModel: defaultModel,
+		logChan:     logChan,
+		usageChan:   usageChan,
 	}
 }
 
@@ -101,8 +125,28 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (h *ProxyHandler) proxyRequest(w http.ResponseWriter, r *http.Request, upstream *Upstream, requestID string, retryAttempt, retryCount int) (error, int) {
 	start := time.Now()
 
-	// Create upstream request
-	req, err := http.NewRequest(http.MethodPost, upstream.URL, r.Body)
+	// Read and transform request body if upstream has a custom model
+	bodyBytes, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		return err, 0
+	}
+
+	// Transform model name if upstream specifies one
+	if upstream.Model != "" || h.defaultModel != "" {
+		bodyBytes = transformModelName(bodyBytes, h.defaultModel, upstream.Model)
+	}
+
+	// Build upstream URL - append /v1/messages if not present
+	upstreamURL := upstream.URL
+	if !strings.HasSuffix(upstreamURL, "/v1/messages") {
+		if !strings.HasSuffix(upstreamURL, "/") {
+			upstreamURL += "/"
+		}
+		upstreamURL += "v1/messages"
+	}
+
+	// Create upstream request with transformed body
+	req, err := http.NewRequest(http.MethodPost, upstreamURL, strings.NewReader(string(bodyBytes)))
 	if err != nil {
 		return err, 0
 	}
@@ -138,7 +182,7 @@ func (h *ProxyHandler) proxyRequest(w http.ResponseWriter, r *http.Request, upst
 	defer resp.Body.Close()
 
 	// Buffer the response body for token extraction
-	bodyBytes, err := ioutil.ReadAll(resp.Body)
+	bodyBytes, err = ioutil.ReadAll(resp.Body)
 	if err != nil {
 		h.logToChan(requestID, latencyMs, upstream.Name, resp.StatusCode, retryAttempt, retryCount)
 		return err, resp.StatusCode

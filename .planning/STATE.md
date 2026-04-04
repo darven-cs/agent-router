@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-04-03)
 Phase: 03
 Plan: Not started
 Status: Phase complete — ready for verification
-Last activity: 2026-04-04
+Last activity: 2026-04-04 - Completed quick task 260404-q4m: TUI 新快捷键导致模型切换问题修复
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -99,6 +99,12 @@ None yet.
 [Issues that affect future work]
 
 None yet.
+
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 260404-q4m | TUI 新快捷键导致模型切换问题修复 | 2026-04-04 | cd0f316 | [260404-q4m-tui](./quick/260404-q4m-tui/) |
 
 ## Session Continuity
 

@@ -1,27 +1,28 @@
 service:
-  name: "Agent Router"
-  version: "1.0.0"
-  port: 8080
-  api_key: "${AGENT_ROUTER_API_KEY}"  # Env var expansion
-
+    name: Agent Router
+    version: 1.0.0
+    port: 6856
+    api_key: 4bab126d59174f4f8277fe51e8517ffb.705eITZG3vJqMw7V
+    model: MiniMax-M2.7
 upstreams:
-  - name: "Zhipu"
-    url: "https://open.bigmodel.cn/api/paas/v4/messages"
-    api_key: "${ZHIPU_API_KEY}"
-    auth_type: "bearer"  # bearer or x-api-key
-    enabled: true
-    timeout: 30
-
-  - name: "Aicodee"
-    url: "https://api.aicodee.com/v1/messages"
-    api_key: "${AICODEE_API_KEY}"
-    auth_type: "x-api-key"
-    enabled: true
-    timeout: 30
-
-  - name: "Minimax"
-    url: "https://api.minimax.chat/v1/messages"
-    api_key: "${MINIMAX_API_KEY}"
-    auth_type: "bearer"
-    enabled: true
-    timeout: 30
+    - name: Zhipu
+      url: https://open.bigmodel.cn/api/anthropic
+      api_key: 4bab126d59174f4f8277fe51e8517ffb.705eITZG3vJqMw7V
+      auth_type: bearer
+      enabled: true
+      timeout: 30
+      model: GLM-5.1
+    - name: Aicodee
+      url: https://v2.aicodee.com
+      api_key: sk-43bddec8aa4bff133eb655d2071e680f
+      auth_type: bearer
+      enabled: true
+      timeout: 30
+      model: MiniMax-M2.7-highspeed
+    - name: Minimax
+      url: https://api.minimaxi.com/anthropic
+      api_key: sk-cp-9EniBt9wyvgAaNPMZvTnbeoc8zJMPlCl3dELDahP6Src7-4c-AL3fv89qsKPkIUZsJiOCh6uGqmVmQZNKNT4jnIfvSuCk6D3tK9Jcz0io_hUUuQfm5pgPSY
+      auth_type: bearer
+      enabled: true
+      timeout: 30
+      model: MiniMax-M2.7

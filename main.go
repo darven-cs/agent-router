@@ -52,6 +52,7 @@ func main() {
 			AuthType: cfg.AuthType,
 			Enabled:  cfg.Enabled,
 			Timeout:  time.Duration(cfg.Timeout) * time.Second,
+			Model:    cfg.Model,
 		})
 	}
 	sharedUpstreams = NewSharedUpstreams(upstreamList)
@@ -79,10 +80,11 @@ func main() {
 	}
 
 	// Create proxy handler
-	proxyHandler = NewProxyHandler(lb, cfg.Service.APIKey, logChan, usageChan)
+	proxyHandler = NewProxyHandler(lb, cfg.Service.APIKey, cfg.Service.Model, logChan, usageChan)
 
 	// Create TUI model with callbacks for upstream changes
 	tuiModel := NewModel(cfg.Service.Name, cfg.Service.Version, cfg.Service.Port, sharedUpstreams.GetAll())
+	tuiModel.defaultModel = cfg.Service.Model
 	tuiModel.OnUpstreamAdded = func(u *Upstream) {
 		sharedUpstreams.Add(u)
 		lb.AddUpstream(u)
@@ -106,6 +108,26 @@ func main() {
 		lb.DeleteUpstream(name)
 		if err := persistConfig(); err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to persist config: %v\n", err)
+		}
+	}
+	tuiModel.OnUpstreamToggled = func(u *Upstream) {
+		sharedUpstreams.Update(u.Name, u)
+		lb.UpdateUpstream(u)
+		if err := persistConfig(); err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to persist config: %v\n", err)
+		}
+	}
+	tuiModel.OnDefaultModelChanged = func(model string) {
+		cfg.Service.Model = model
+		proxyHandler.defaultModel = model
+		if err := persistConfig(); err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to persist config: %v\n", err)
+		}
+	}
+	tuiModel.OnUpstreamModelSelected = func(u *Upstream) {
+		sharedUpstreams.Update(u.Name, u)
+		if err := persistConfig(); err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to persist upstream model: %v\n", err)
 		}
 	}
 	tuiModel.OnReload = func() error {
@@ -182,6 +204,7 @@ func persistConfig() error {
 			AuthType: u.AuthType,
 			Enabled:  u.Enabled,
 			Timeout:  int(u.Timeout.Seconds()),
+			Model:    u.Model,
 		})
 	}
 
@@ -216,6 +239,7 @@ func doReload() error {
 			AuthType: uc.AuthType,
 			Enabled:  uc.Enabled,
 			Timeout:  time.Duration(uc.Timeout) * time.Second,
+			Model:    uc.Model,
 		})
 	}
 
@@ -229,6 +253,10 @@ func doReload() error {
 
 	// Update proxy handler's load balancer reference
 	proxyHandler.lb = lb
+	proxyHandler.defaultModel = newCfg.Service.Model
+
+	// Update global cfg reference
+	cfg = newCfg
 
 	fmt.Println("Config reloaded successfully")
 	return nil
