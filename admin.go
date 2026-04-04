@@ -2,9 +2,7 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
-	"path/filepath"
 	"strings"
 	"time"
 )
@@ -69,46 +67,6 @@ func handleAdminReload(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "reloaded"})
-}
-
-// doReload re-reads config.yaml and reinitializes the LoadBalancer
-func doReload() error {
-	configPath := filepath.Join(filepath.Dir(execPath), "config.yaml")
-
-	newCfg, err := LoadConfig(configPath)
-	if err != nil {
-		return fmt.Errorf("failed to load config: %w", err)
-	}
-
-	// Re-initialize LoadBalancer from config
-	newUpstreams := NewLoadBalancer(newCfg.Upstreams)
-
-	// Create new upstream list from config
-	var newList []*Upstream
-	for _, uc := range newCfg.Upstreams {
-		newList = append(newList, &Upstream{
-			Name:     uc.Name,
-			URL:      uc.URL,
-			APIKey:   uc.APIKey,
-			AuthType: uc.AuthType,
-			Enabled:  uc.Enabled,
-			Timeout:  time.Duration(uc.Timeout) * time.Second,
-		})
-	}
-
-	// Update shared upstreams (thread-safe via mutex)
-	sharedUpstreams.mu.Lock()
-	sharedUpstreams.upstreams = newList
-	sharedUpstreams.mu.Unlock()
-
-	// Re-create load balancer (replace the old one)
-	lb = newUpstreams
-
-	// Update proxy handler's load balancer reference
-	proxyHandler.lb = lb
-
-	fmt.Println("Config reloaded successfully")
-	return nil
 }
 
 // handleAdminStatus returns comprehensive service status

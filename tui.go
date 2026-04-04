@@ -2,28 +2,109 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
 
-// Style definitions
+// Catppuccin Mocha palette
 var (
-	stylePrimary   = lipgloss.NewStyle().Foreground(lipgloss.Color("99"))
-	styleSecondary = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
-	styleSuccess   = lipgloss.NewStyle().Foreground(lipgloss.Color("82"))
-	styleError     = lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
-	styleBold      = lipgloss.NewStyle().Bold(true)
-	styleHeader    = lipgloss.NewStyle().Foreground(lipgloss.Color("99")).Bold(true)
-	styleFormActive = lipgloss.NewStyle().Foreground(lipgloss.Color("82")).Bold(true)
-	styleWarning   = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
+	// Base colors
+	bgColor      = lipgloss.Color("235")  // base
+	surfaceColor = lipgloss.Color("238")  // surface0
+	surface1Color = lipgloss.Color("239") // surface1
+	overlayColor = lipgloss.Color("243")  // overlay
+
+	// Text colors
+	textColor      = lipgloss.Color("222") // text
+	subtextColor   = lipgloss.Color("245") // subtext0
+	accentColor    = lipgloss.Color("250") // lavender/highlight
+
+	// Accent colors
+	mauveColor  = lipgloss.Color("205") // mauve (primary accent)
+	tealColor   = lipgloss.Color("115") // teal (secondary accent)
+	greenColor  = lipgloss.Color("114") // green (success)
+	redColor    = lipgloss.Color("203") // red (error)
+	yellowColor = lipgloss.Color("228") // yellow (warning)
+
+	// Highlight for selected items
+	selectedBg   = lipgloss.Color("24")  // blue highlight background
+	selectedFg   = lipgloss.Color("230") // white text on highlight
+)
+
+// Style definitions with Catppuccin
+var (
+	styleBase = lipgloss.NewStyle().
+			Background(bgColor).
+			Foreground(textColor)
+
+	styleSurface = lipgloss.NewStyle().
+			Background(surfaceColor).
+			Foreground(textColor)
+
+	styleSurfaceBright = lipgloss.NewStyle().
+				Background(surface1Color).
+				Foreground(textColor)
+
+	styleMauve = lipgloss.NewStyle().
+			Foreground(mauveColor)
+
+	styleTeal = lipgloss.NewStyle().
+			Foreground(tealColor)
+
+	styleGreen = lipgloss.NewStyle().
+			Foreground(greenColor)
+
+	styleRed = lipgloss.NewStyle().
+			Foreground(redColor)
+
+	styleYellow = lipgloss.NewStyle().
+			Foreground(yellowColor)
+
+	styleBold = lipgloss.NewStyle().Bold(true)
+
+	styleDim = lipgloss.NewStyle().Foreground(subtextColor)
+
+	// Border styles
+	borderStyle = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(mauveColor)
+
+	navBorderStyle = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(mauveColor).
+			Padding(0, 1)
+
+	contentBorderStyle = lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(tealColor)
+
+	statusBorderStyle = lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(overlayColor)
+
+	// Selected row style
+	selectedStyle = lipgloss.NewStyle().
+			Background(selectedBg).
+			Foreground(selectedFg).
+			Bold(true)
+
+	// Inverted style for status bar
+	invertedStyle = lipgloss.NewStyle().
+			Background(textColor).
+			Foreground(bgColor)
 )
 
 // Message types for upstream changes
 type UpstreamAdded struct{ Upstream *Upstream }
 type UpstreamUpdated struct{ Upstream *Upstream; OldName string }
 type UpstreamDeleted struct{ Name string }
+
+// Message types for reload
+type ReloadRequest struct{}
+type ReloadComplete struct{ Error error }
 
 // model holds all TUI state
 type model struct {
@@ -35,6 +116,10 @@ type model struct {
 	logs         []RequestLog
 	requestCount int64
 	successCount int64
+
+	// Window size for responsive layout
+	width  int
+	height int
 
 	// Navigation state
 	selectedIndex int
@@ -52,14 +137,7 @@ type model struct {
 	OnUpstreamAdded   func(*Upstream)
 	OnUpstreamUpdated func(*Upstream, string) // upstream, oldName
 	OnUpstreamDeleted func(string)           // name
-}
-
-// UpstreamChange represents a change to upstream configuration
-type UpstreamChange struct {
-	Type     string    // "added", "updated", "deleted"
-	Upstream *Upstream // For added/updated
-	OldName  string    // For updated when name changed
-	Name     string    // For deleted
+	OnReload          func() error          // Config reload callback
 }
 
 // NewModel creates a new TUI model
@@ -74,6 +152,8 @@ func NewModel(serviceName, version string, port int, upstreams []*Upstream) mode
 		selectedIndex: 0,
 		formMode:      "",
 		confirmMode:   false,
+		width:         80,  // default
+		height:        24,  // default
 	}
 }
 
@@ -85,6 +165,10 @@ func (m model) Init() tea.Cmd {
 // Update handles TUI messages
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+
 	case tea.KeyMsg:
 		if m.confirmMode {
 			return m.handleConfirm(msg)
@@ -117,6 +201,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.confirmMode = true
 				m.confirmType = "delete"
 			}
+		case "r":
+			if m.OnReload != nil {
+				err := m.OnReload()
+				return m, func() tea.Msg {
+					return ReloadComplete{Error: err}
+				}
+			}
 		case "q", "ctrl+c":
 			m.confirmMode = true
 			m.confirmType = "shutdown"
@@ -131,6 +222,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.requestCount++
 		if msg.StatusCode >= 200 && msg.StatusCode < 400 {
 			m.successCount++
+		}
+	case ReloadComplete:
+		if msg.Error != nil {
+			fmt.Fprintf(os.Stderr, "Reload error: %v\n", msg.Error)
 		}
 	}
 	return m, nil
@@ -274,112 +369,302 @@ func maskString(s string) string {
 	return s[:4] + "****" + s[len(s)-4:]
 }
 
-// View renders the TUI
+// View renders the TUI with three-section layout
 func (m model) View() string {
-	var s string
+	nav := m.renderNavigation()
+	content := m.renderContent()
+	status := m.renderStatus()
 
-	// Header
-	s += styleHeader.Render("╭─────────────────────────────────────────────────╮\n")
-	s += styleHeader.Render(fmt.Sprintf("│ %s v%s                              │\n", m.serviceName, m.version))
-	s += styleHeader.Render(fmt.Sprintf("│ Port: %d  |  Uptime: %s           │\n", m.port, time.Since(m.startTime).String()))
-	s += styleHeader.Render("╰─────────────────────────────────────────────────╯\n\n")
+	return lipgloss.JoinVertical(
+		lipgloss.Top,
+		nav,
+		content,
+		status,
+	)
+}
 
-	// Form mode
+// renderNavigation renders the top navigation bar
+func (m model) renderNavigation() string {
+	infoStyle := lipgloss.NewStyle().
+		Foreground(mauveColor).
+		Bold(true)
+
+	dimStyle := lipgloss.NewStyle().
+		Foreground(subtextColor)
+
+	hintsStyle := lipgloss.NewStyle().
+			Foreground(tealColor)
+
+	nav := lipgloss.NewStyle().
+		Width(m.width).
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(mauveColor).
+		Padding(0, 1, 0, 1)
+
+	content := lipgloss.JoinHorizontal(
+		lipgloss.Left,
+		infoStyle.Render(fmt.Sprintf(" %s v%s ", m.serviceName, m.version)),
+		dimStyle.Render(fmt.Sprintf("  Port: %d  Uptime: %s  ", m.port, time.Since(m.startTime).Round(time.Second))),
+		hintsStyle.Render(" [a]Add [e]Edit [d]Del [r]Reload [q]Quit "),
+	)
+
+	return nav.Render(content)
+}
+
+// renderContent renders the middle main content area
+func (m model) renderContent() string {
 	if m.formMode != "" {
-		modeStr := "Add Upstream"
-		if m.formMode == "edit" {
-			modeStr = "Edit Upstream"
-		}
-		s += styleHeader.Render(fmt.Sprintf("\n%s (ESC to cancel)\n", modeStr))
-		s += styleSecondary.Render("───────────────────────────────────────\n")
-
-		fields := []string{
-			fmt.Sprintf("Name:     [%s]", m.formData.Name),
-			fmt.Sprintf("URL:      [%s]", m.formData.URL),
-			fmt.Sprintf("API Key:  [%s]", maskString(m.formData.APIKey)),
-			fmt.Sprintf("Auth:     [%s] (enter to toggle)", m.formData.AuthType),
-			fmt.Sprintf("Timeout:  [%d] seconds", int(m.formData.Timeout/time.Second)),
-			fmt.Sprintf("Enabled:  [%v] (enter to toggle)", m.formData.Enabled),
-		}
-		for i, field := range fields {
-			if i == m.formField {
-				s += styleFormActive.Render("> " + field + "\n")
-			} else {
-				s += "  " + field + "\n"
-			}
-		}
-		s += "\n"
-		s += styleSecondary.Render("↑↓ Navigate | Enter Next/Submit | a-z Type | b Backspace\n")
-		return s
+		return m.renderForm()
 	}
-
-	// Confirmation mode
 	if m.confirmMode {
-		s += "\n"
-		if m.confirmType == "delete" {
-			upstreamName := ""
-			if m.selectedIndex < len(m.upstreams) {
-				upstreamName = m.upstreams[m.selectedIndex].Name
-			}
-			s += styleWarning.Render(fmt.Sprintf("╭─────────────────────────────────────╮\n"))
-			s += styleWarning.Render(fmt.Sprintf("│  Delete '%s'? [y/n]            │\n", upstreamName))
-			s += styleWarning.Render(fmt.Sprintf("╰─────────────────────────────────────╯\n"))
-		} else if m.confirmType == "shutdown" {
-			s += styleError.Render(fmt.Sprintf("╭─────────────────────────────────────╮\n"))
-			s += styleError.Render(fmt.Sprintf("│  Shutdown? [y/n]                   │\n"))
-			s += styleError.Render(fmt.Sprintf("╰─────────────────────────────────────╯\n"))
-		}
-		s += "\n"
+		return m.renderConfirmation()
+	}
+	return m.renderUpstreamList()
+}
+
+// renderForm renders the add/edit form
+func (m model) renderForm() string {
+	contentWidth := m.width - 4
+
+	modeStr := "Add Upstream"
+	if m.formMode == "edit" {
+		modeStr = "Edit Upstream"
 	}
 
-	// Upstream list
-	s += styleBold.Render("Upstreams:\n")
+	headerStyle := lipgloss.NewStyle().
+		Foreground(mauveColor).
+		Bold(true).
+		Width(contentWidth)
+
+	formStyle := lipgloss.NewStyle().
+		Width(contentWidth).
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(tealColor).
+		Padding(1, 1, 0, 1)
+
+	activeFieldStyle := lipgloss.NewStyle().
+				Foreground(greenColor).
+				Bold(true)
+
+	inactiveFieldStyle := lipgloss.NewStyle().
+				Foreground(textColor)
+
+	dimStyle := lipgloss.NewStyle().
+		Foreground(subtextColor)
+
+	var lines []string
+
+	lines = append(lines, headerStyle.Render(modeStr+" (ESC to cancel)"))
+
+	fields := []struct {
+		label  string
+		value  string
+		isActive bool
+	}{
+		{"Name", m.formData.Name, m.formField == 0},
+		{"URL", m.formData.URL, m.formField == 1},
+		{"API Key", maskString(m.formData.APIKey), m.formField == 2},
+		{"Auth", m.formData.AuthType + " (enter to toggle)", m.formField == 3},
+		{"Timeout", fmt.Sprintf("%d seconds", int(m.formData.Timeout/time.Second)), m.formField == 4},
+		{"Enabled", fmt.Sprintf("%v (enter to toggle)", m.formData.Enabled), m.formField == 5},
+	}
+
+	for i, field := range fields {
+		prefix := "  "
+		style := inactiveFieldStyle
+		if field.isActive {
+			prefix = " ●"
+			style = activeFieldStyle
+		}
+		line := fmt.Sprintf("%s %-10s %s", prefix, field.label+":", field.value)
+		if i == m.formField {
+			lines = append(lines, style.Render(line))
+		} else {
+			lines = append(lines, inactiveFieldStyle.Render(line))
+		}
+	}
+
+	lines = append(lines, dimStyle.Render("↑↓ Navigate | Enter Next/Submit | b Backspace"))
+
+	content := lipgloss.JoinVertical(
+		lipgloss.Top,
+		lines...,
+	)
+
+	return formStyle.Render(content)
+}
+
+// renderConfirmation renders the confirmation dialog
+func (m model) renderConfirmation() string {
+	warningStyle := lipgloss.NewStyle().
+			Foreground(yellowColor).
+			Bold(true)
+
+	errorStyle := lipgloss.NewStyle().
+			Foreground(redColor).
+			Bold(true)
+
+	confirmStyle := lipgloss.NewStyle().
+			Width(m.width - 4).
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(yellowColor).
+			Padding(1, 2)
+
+	var content string
+	if m.confirmType == "delete" {
+		upstreamName := ""
+		if m.selectedIndex < len(m.upstreams) {
+			upstreamName = m.upstreams[m.selectedIndex].Name
+		}
+		content = lipgloss.JoinVertical(
+			lipgloss.Top,
+			warningStyle.Render("⚠ Confirm"),
+			warningStyle.Render(fmt.Sprintf("Delete '%s'? [y/n]", upstreamName)),
+		)
+	} else {
+		content = lipgloss.JoinVertical(
+			lipgloss.Top,
+			errorStyle.Render("⚠ Confirm"),
+			errorStyle.Render("Shutdown? [y/n]"),
+		)
+	}
+
+	return confirmStyle.Render(content)
+}
+
+// renderUpstreamList renders the upstream list view
+func (m model) renderUpstreamList() string {
+	contentWidth := m.width - 4
+
+	headerStyle := lipgloss.NewStyle().
+		Foreground(mauveColor).
+		Bold(true).
+		Width(contentWidth)
+
+	listStyle := lipgloss.NewStyle().
+			Width(contentWidth).
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(tealColor).
+			Padding(1, 1, 0, 1)
+
+	itemStyle := lipgloss.NewStyle().
+			Foreground(textColor)
+
+	selectedItemStyle := lipgloss.NewStyle().
+			Background(selectedBg).
+			Foreground(selectedFg).
+			Bold(true)
+
+	enabledStyle := lipgloss.NewStyle().Foreground(greenColor)
+	disabledStyle := lipgloss.NewStyle().Foreground(redColor)
+
+	dimStyle := lipgloss.NewStyle().
+		Foreground(subtextColor)
+
+	var lines []string
+
+	lines = append(lines, headerStyle.Render("Upstreams"))
+
 	if len(m.upstreams) == 0 {
-		s += styleSecondary.Render("  (no upstreams configured)\n")
+		lines = append(lines, dimStyle.Render("  (no upstreams configured)"))
 	} else {
 		for i, us := range m.upstreams {
-			status := styleSuccess.Render("● enabled")
+			status := enabledStyle.Render("●")
 			if !us.Enabled {
-				status = styleError.Render("○ disabled")
+				status = disabledStyle.Render("○")
 			}
-			prefix := "  "
+			line := fmt.Sprintf("  %s %s [%s]", us.Name, status, us.AuthType)
+
 			if i == m.selectedIndex && !m.confirmMode {
-				prefix = styleFormActive.Render("> ")
+				lines = append(lines, selectedItemStyle.Render("▶ "+us.Name+"  "+enabledStyle.Render("[")+us.AuthType+enabledStyle.Render("]")))
+			} else {
+				lines = append(lines, itemStyle.Render(line))
 			}
-			s += fmt.Sprintf("%s%s %s [%s]\n", prefix, us.Name, status, us.AuthType)
 		}
 	}
-	s += "\n"
-	s += styleSecondary.Render("↑↓ Navigate | a Add | e Edit | d Delete | q Quit\n\n")
 
-	// Request log
-	s += styleBold.Render("Request Log:\n")
-	if len(m.logs) == 0 {
-		s += styleSecondary.Render("  (no requests yet)\n")
-	} else {
-		for _, log := range m.logs {
-			statusStr := fmt.Sprintf("%d", log.StatusCode)
-			if log.StatusCode == 0 {
-				statusStr = "ERR"
-			}
-			s += fmt.Sprintf("  %s | %4dms | %s | %s\n",
-				log.Timestamp.Format("15:04:05"),
-				log.LatencyMs,
-				log.UpstreamName,
-				statusStr)
-		}
-	}
-	s += "\n"
+	lines = append(lines, dimStyle.Render("↑↓ Navigate | a Add | e Edit | d Delete | r Reload"))
 
-	// Stats
-	s += styleBold.Render("Statistics:\n")
+	content := lipgloss.JoinVertical(
+		lipgloss.Top,
+		lines...,
+	)
+
+	return listStyle.Render(content)
+}
+
+// renderStatus renders the bottom status bar
+func (m model) renderStatus() string {
 	total := m.requestCount
 	success := m.successCount
 	rate := float64(0)
 	if total > 0 {
 		rate = float64(success) / float64(total) * 100
 	}
-	s += fmt.Sprintf("  Total: %d | Success: %d | Rate: %.1f%%\n", total, success, rate)
 
-	return s
+	greenStyle := lipgloss.NewStyle().Foreground(greenColor)
+	redStyle := lipgloss.NewStyle().Foreground(redColor)
+	statsStyle := lipgloss.NewStyle().Foreground(textColor)
+	labelStyle := lipgloss.NewStyle().Foreground(subtextColor)
+
+	// Build stats
+	stats := labelStyle.Render("Total: ") +
+		statsStyle.Render(fmt.Sprintf("%d", total)) +
+		labelStyle.Render(" | Success: ") +
+		greenStyle.Render(fmt.Sprintf("%d", success)) +
+		labelStyle.Render(" | Rate: ") +
+		greenStyle.Render(fmt.Sprintf("%.1f%%", rate))
+
+	// Last log entry
+	var lastLogStr string
+	if len(m.logs) > 0 {
+		log := m.logs[len(m.logs)-1]
+		statusStr := greenStyle.Render(fmt.Sprintf("%d", log.StatusCode))
+		if log.StatusCode == 0 || log.StatusCode >= 400 {
+			statusStr = redStyle.Render("ERR")
+		} else if log.StatusCode >= 400 {
+			statusStr = redStyle.Render(fmt.Sprintf("%d", log.StatusCode))
+		}
+		lastLogStr = labelStyle.Render("Last: ") +
+			statsStyle.Render(log.Timestamp.Format("15:04:05")) +
+			labelStyle.Render(" | ") +
+			statsStyle.Render(fmt.Sprintf("%4dms", log.LatencyMs)) +
+			labelStyle.Render(" | ") +
+			statsStyle.Render(log.UpstreamName) +
+			labelStyle.Render(" | ") +
+			statusStr
+	}
+
+	// Full-width inverted status bar
+	statusBarStyle := lipgloss.NewStyle().
+			Width(m.width).
+			Background(textColor).
+			Foreground(bgColor).
+			Padding(0, 1, 0, 1)
+
+	content := lipgloss.JoinHorizontal(
+		lipgloss.Left,
+		stats,
+		lipgloss.NewStyle().Width(m.width - len(stripAnsi(stats)) - len(stripAnsi(lastLogStr)) - 2).Render(""),
+		lastLogStr,
+	)
+
+	return statusBarStyle.Render(content)
+}
+
+// stripAnsi calculates visible string length (helper for status bar)
+func stripAnsi(s string) string {
+	// Simple helper - returns approximate length
+	result := ""
+	inEscape := false
+	for _, c := range s {
+		if c == '\x1b' {
+			inEscape = true
+		} else if inEscape && c == 'm' {
+			inEscape = false
+		} else if !inEscape {
+			result += string(c)
+		}
+	}
+	return result
 }
