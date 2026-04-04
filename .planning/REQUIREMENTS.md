@@ -34,11 +34,11 @@
 
 ### Usage Tracking
 
-- [ ] **USAGE-01**: Track total request count (success + failure)
-- [ ] **USAGE-02**: Track input/output tokens per request
-- [ ] **USAGE-03**: Track per-upstream request counts
-- [ ] **USAGE-04**: Store usage data in local SQLite (usage.db)
-- [ ] **USAGE-05**: Async writes to SQLite to not block requests
+- [x] **USAGE-01**: Track total request count (success + failure)
+- [x] **USAGE-02**: Track input/output tokens per request
+- [x] **USAGE-03**: Track per-upstream request counts
+- [x] **USAGE-04**: Store usage data in local SQLite (usage.db)
+- [x] **USAGE-05**: Async writes to SQLite to not block requests
 
 ### TUI Interface
 
@@ -129,11 +129,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 | TUI-07 | Phase 2 | Complete |
 | TUI-08 | Phase 2 | Complete |
 | TUI-09 | Phase 2 | Complete |
-| USAGE-01 | Phase 3 | Pending |
-| USAGE-02 | Phase 3 | Pending |
-| USAGE-03 | Phase 3 | Pending |
-| USAGE-04 | Phase 3 | Pending |
-| USAGE-05 | Phase 3 | Pending |
+| USAGE-01 | Phase 3 | Complete |
+| USAGE-02 | Phase 3 | Complete |
+| USAGE-03 | Phase 3 | Complete |
+| USAGE-04 | Phase 3 | Complete |
+| USAGE-05 | Phase 3 | Complete |
 | CONF-01 | Phase 3 | Pending |
 | CONF-02 | Phase 3 | Pending |
 | CONF-03 | Phase 3 | Pending |
