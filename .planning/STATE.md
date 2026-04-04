@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-04-03)
 Phase: 03
 Plan: Not started
 Status: Phase complete — ready for verification
-Last activity: 2026-04-04 - Completed quick task 260404-q4m: TUI 新快捷键导致模型切换问题修复
+Last activity: 2026-04-04 - Completed quick task 260404-qrg: TUI选择其他上游模型后仍使用Zhipu
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -105,6 +105,7 @@ None yet.
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
 | 260404-q4m | TUI 新快捷键导致模型切换问题修复 | 2026-04-04 | cd0f316 | [260404-q4m-tui](./quick/260404-q4m-tui/) |
+| 260404-qrg | TUI选择其他上游模型后仍使用Zhipu | 2026-04-04 | 521604b | [260404-qrg-tui-zhipu](./quick/260404-qrg-tui-zhipu/) |
 
 ## Session Continuity
 
