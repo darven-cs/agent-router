@@ -86,6 +86,9 @@ func main() {
 	tuiModel.OnUpstreamAdded = func(u *Upstream) {
 		sharedUpstreams.Add(u)
 		lb.AddUpstream(u)
+		if err := persistConfig(); err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to persist config: %v\n", err)
+		}
 	}
 	tuiModel.OnUpstreamUpdated = func(u *Upstream, oldName string) {
 		if oldName != "" && oldName != u.Name {
@@ -94,10 +97,16 @@ func main() {
 		}
 		sharedUpstreams.Update(u.Name, u)
 		lb.UpdateUpstream(u)
+		if err := persistConfig(); err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to persist config: %v\n", err)
+		}
 	}
 	tuiModel.OnUpstreamDeleted = func(name string) {
 		sharedUpstreams.Delete(name)
 		lb.DeleteUpstream(name)
+		if err := persistConfig(); err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to persist config: %v\n", err)
+		}
 	}
 	tuiModel.OnReload = func() error {
 		return doReload()
@@ -154,6 +163,35 @@ func main() {
 	close(usageChan)
 
 	fmt.Println("Goodbye!")
+}
+
+// persistConfig saves the current upstream configuration to config.yaml
+// This is called after each TUI add/edit/delete/enable/disable to ensure
+// runtime changes survive SIGHUP reload.
+func persistConfig() error {
+	configPath := filepath.Join(filepath.Dir(execPath), "config.yaml")
+
+	// Build UpstreamConfig list from current SharedUpstreams state
+	upstreams := sharedUpstreams.GetAll()
+	upstreamConfigs := make([]UpstreamConfig, 0, len(upstreams))
+	for _, u := range upstreams {
+		upstreamConfigs = append(upstreamConfigs, UpstreamConfig{
+			Name:     u.Name,
+			URL:      u.URL,
+			APIKey:   u.APIKey,
+			AuthType: u.AuthType,
+			Enabled:  u.Enabled,
+			Timeout:  int(u.Timeout.Seconds()),
+		})
+	}
+
+	// Create a new Config with current state
+	newCfg := &Config{
+		Service:   cfg.Service,
+		Upstreams: upstreamConfigs,
+	}
+
+	return SaveConfig(newCfg, configPath)
 }
 
 // doReload re-reads config.yaml and reinitializes the LoadBalancer
