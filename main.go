@@ -15,13 +15,20 @@ import (
 )
 
 var (
-	db        *gorm.DB
-	usageChan chan RequestLog
+	db              *gorm.DB
+	usageChan       chan RequestLog
+	execPath        string
+	sharedUpstreams *SharedUpstreams
+	lb              LoadBalancer
+	proxyHandler    *ProxyHandler
+	cfg             *Config
+	startTime       = time.Now()
 )
 
 func main() {
 	// Find config file - same directory as executable
-	execPath, err := os.Executable()
+	var err error
+	execPath, err = os.Executable()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to get executable path: %v\n", err)
 		os.Exit(1)
@@ -29,7 +36,7 @@ func main() {
 	configPath := filepath.Join(filepath.Dir(execPath), "config.yaml")
 
 	// Load configuration
-	cfg, err := LoadConfig(configPath)
+	cfg, err = LoadConfig(configPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to load config from %s: %v\n", configPath, err)
 		os.Exit(1)
@@ -47,10 +54,10 @@ func main() {
 			Timeout:  time.Duration(cfg.Timeout) * time.Second,
 		})
 	}
-	sharedUpstreams := NewSharedUpstreams(upstreamList)
+	sharedUpstreams = NewSharedUpstreams(upstreamList)
 
 	// Create load balancer
-	lb := NewLoadBalancer(cfg.Upstreams)
+	lb = NewLoadBalancer(cfg.Upstreams)
 
 	// Create log channel for request updates
 	logChan := make(chan RequestLog, 100)
@@ -72,7 +79,7 @@ func main() {
 	}
 
 	// Create proxy handler
-	proxyHandler := NewProxyHandler(lb, cfg.Service.APIKey, logChan, usageChan)
+	proxyHandler = NewProxyHandler(lb, cfg.Service.APIKey, logChan, usageChan)
 
 	// Create TUI model with callbacks for upstream changes
 	tuiModel := NewModel(cfg.Service.Name, cfg.Service.Version, cfg.Service.Port, sharedUpstreams.GetAll())
@@ -92,6 +99,9 @@ func main() {
 		sharedUpstreams.Delete(name)
 		lb.DeleteUpstream(name)
 	}
+	tuiModel.OnReload = func() error {
+		return doReload()
+	}
 
 	// Start HTTP server in background
 	server := &http.Server{
@@ -103,6 +113,18 @@ func main() {
 		fmt.Printf("Starting HTTP server on port %d...\n", cfg.Service.Port)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			fmt.Fprintf(os.Stderr, "HTTP server error: %v\n", err)
+		}
+	}()
+
+	// Start SIGHUP handler for config hot reload
+	sighupChan := make(chan os.Signal, 1)
+	signal.Notify(sighupChan, syscall.SIGHUP)
+	go func() {
+		for range sighupChan {
+			fmt.Println("Received SIGHUP, reloading configuration...")
+			if err := doReload(); err != nil {
+				fmt.Fprintf(os.Stderr, "Config reload failed: %v\n", err)
+			}
 		}
 	}()
 
@@ -132,6 +154,46 @@ func main() {
 	close(usageChan)
 
 	fmt.Println("Goodbye!")
+}
+
+// doReload re-reads config.yaml and reinitializes the LoadBalancer
+func doReload() error {
+	configPath := filepath.Join(filepath.Dir(execPath), "config.yaml")
+
+	newCfg, err := LoadConfig(configPath)
+	if err != nil {
+		return fmt.Errorf("failed to load config: %w", err)
+	}
+
+	// Re-initialize LoadBalancer from config
+	newUpstreams := NewLoadBalancer(newCfg.Upstreams)
+
+	// Create new upstream list from config
+	var newList []*Upstream
+	for _, uc := range newCfg.Upstreams {
+		newList = append(newList, &Upstream{
+			Name:     uc.Name,
+			URL:      uc.URL,
+			APIKey:   uc.APIKey,
+			AuthType: uc.AuthType,
+			Enabled:  uc.Enabled,
+			Timeout:  time.Duration(uc.Timeout) * time.Second,
+		})
+	}
+
+	// Update shared upstreams (thread-safe via mutex)
+	sharedUpstreams.mu.Lock()
+	sharedUpstreams.upstreams = newList
+	sharedUpstreams.mu.Unlock()
+
+	// Re-create load balancer (replace the old one)
+	lb = newUpstreams
+
+	// Update proxy handler's load balancer reference
+	proxyHandler.lb = lb
+
+	fmt.Println("Config reloaded successfully")
+	return nil
 }
 
 // HandleSignals sets up signal handling for graceful shutdown
