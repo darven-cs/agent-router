@@ -50,6 +50,24 @@ func NewProxyHandler(lb LoadBalancer, apiKey string, logChan chan RequestLog, us
 
 // ServeHTTP handles incoming HTTP requests
 func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// Route admin endpoints first
+	if r.URL.Path == "/admin/status" {
+		if r.Method == http.MethodGet {
+			handleAdminStatus(w, r)
+			return
+		}
+		http.NotFound(w, r)
+		return
+	}
+	if r.URL.Path == "/admin/reload" {
+		if r.Method == http.MethodPost {
+			handleAdminReload(w, r)
+			return
+		}
+		http.NotFound(w, r)
+		return
+	}
+
 	// Only handle POST /v1/messages
 	if r.Method != http.MethodPost || r.URL.Path != "/v1/messages" {
 		http.NotFound(w, r)
