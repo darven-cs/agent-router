@@ -62,7 +62,7 @@ Agent Router is a local API proxy that routes Claude Code requests to multiple u
 - [x] 03-01-PLAN.md - SQLite usage tracking with async writes (Wave 1)
 - [x] 03-02-PLAN.md - Config hot reload via SIGHUP/TUI/API (Wave 2)
 - [x] 03-03-PLAN.md - Admin API endpoints /admin/status and /admin/reload (Wave 2)
-- [ ] 03-04-PLAN.md - Config write-back for dynamic upstream changes (Wave 1) [GAP CLOSURE]
+- [x] 03-04-PLAN.md - Config write-back for dynamic upstream changes (Wave 1) [GAP CLOSURE]
 
 ## Progress
 

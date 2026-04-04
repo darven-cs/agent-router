@@ -57,9 +57,9 @@
 - [ ] **CONF-01**: Reload config on SIGHUP signal
 - [ ] **CONF-02**: Reload config via TUI button
 - [ ] **CONF-03**: Reload config via POST /admin/reload API
-- [ ] **CONF-04**: Support adding new upstream channels dynamically
-- [ ] **CONF-05**: Support removing upstream channels dynamically
-- [ ] **CONF-06**: Support enabling/disabling channels dynamically
+- [x] **CONF-04**: Support adding new upstream channels dynamically
+- [x] **CONF-05**: Support removing upstream channels dynamically
+- [x] **CONF-06**: Support enabling/disabling channels dynamically
 
 ### Admin API
 
@@ -137,9 +137,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CONF-01 | Phase 3 | Pending |
 | CONF-02 | Phase 3 | Pending |
 | CONF-03 | Phase 3 | Pending |
-| CONF-04 | Phase 3 | Pending |
-| CONF-05 | Phase 3 | Pending |
-| CONF-06 | Phase 3 | Pending |
+| CONF-04 | Phase 3 | Complete |
+| CONF-05 | Phase 3 | Complete |
+| CONF-06 | Phase 3 | Complete |
 | ADMIN-01 | Phase 3 | Pending |
 | ADMIN-02 | Phase 3 | Pending |
 
