@@ -37,7 +37,7 @@ Usage data persisted to SQLite, config hot reload via SIGHUP/TUI/API, admin API 
 
 ### Dynamic Upstream Changes (CONF-04, CONF-05, CONF-06)
 - **D-13:** TUI add/edit/delete/enable/disable changes take effect immediately in LoadBalancer
-- **D-14:** TUI changes persist only in-memory (NOT to config.yaml) — runtime-only
+- **D-14:** TUI changes are persisted to config.yaml via SaveConfig() so they survive SIGHUP reload (overridden 2026-04-04 — previously runtime-only)
 - **D-15:** New upstreams from TUI are added to SharedUpstreams and LoadBalancer immediately
 - **D-16:** Deleted upstreams are removed from SharedUpstreams and LoadBalancer immediately
 
