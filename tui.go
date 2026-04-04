@@ -298,18 +298,14 @@ func (m model) handleModelSelect(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.selectedIndex++
 			}
 		case "enter":
-			// Select the model from current upstream
+			// Select the current upstream's model as its default (not global)
 			if len(m.upstreams) > 0 {
 				us := m.upstreams[m.selectedIndex]
 				if us.Model != "" {
-					m.defaultModel = us.Model
-					// Save model to upstream and notify
-					us.Model = m.defaultModel
+					// Only update the upstream's model, NOT the global default
+					// The global defaultModel stays unchanged in model-select mode
 					if m.OnUpstreamModelSelected != nil {
 						m.OnUpstreamModelSelected(us)
-					}
-					if m.OnDefaultModelChanged != nil {
-						m.OnDefaultModelChanged(us.Model)
 					}
 				}
 			}
@@ -317,19 +313,14 @@ func (m model) handleModelSelect(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "esc":
 			m.modelSelectMode = false
 		case "0", "1", "2", "3", "4", "5", "6", "7", "8", "9":
-			// Direct number selection
+			// Direct number selection - select that upstream's model as its default
 			idx := int(msg.Runes[0] - '0')
 			if idx < len(m.upstreams) {
 				us := m.upstreams[idx]
 				if us.Model != "" {
-					m.defaultModel = us.Model
-					// Save model to upstream and notify
-					us.Model = m.defaultModel
+					// Only update the upstream's model, NOT the global default
 					if m.OnUpstreamModelSelected != nil {
 						m.OnUpstreamModelSelected(us)
-					}
-					if m.OnDefaultModelChanged != nil {
-						m.OnDefaultModelChanged(us.Model)
 					}
 				}
 			}
