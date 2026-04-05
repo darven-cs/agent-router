@@ -24,6 +24,8 @@ type LoadBalancer struct {
 	upstreams []*Upstream
 	primary   *Upstream    // nil = auto hash mode
 	mu        sync.RWMutex // protects primary field
+	// 追踪主上游失败
+	primaryFailCount int // 连续失败次数
 }
 
 // NewLoadBalancer creates a load balancer from upstream configurations
@@ -87,6 +89,7 @@ func (lb *LoadBalancer) SetPrimary(u *Upstream) {
 	lb.mu.Lock()
 	defer lb.mu.Unlock()
 	lb.primary = u
+	lb.primaryFailCount = 0 // 清除失败计数
 }
 
 // ClearPrimary removes the primary upstream, reverting to auto hash mode
@@ -94,6 +97,38 @@ func (lb *LoadBalancer) ClearPrimary() {
 	lb.mu.Lock()
 	defer lb.mu.Unlock()
 	lb.primary = nil
+}
+
+// TrackPrimaryFailure 记录主上游失败，当主上游连续失败3次后自动清除
+func (lb *LoadBalancer) TrackPrimaryFailure() {
+	lb.mu.Lock()
+	defer lb.mu.Unlock()
+	lb.primaryFailCount++
+	// 连续3次失败后清除主上游，自动切换到其他上游
+	if lb.primaryFailCount >= 3 {
+		lb.primary = nil
+	}
+}
+
+// ShouldSkipPrimary 检查是否应该跳过主上游（基于失败状态）
+func (lb *LoadBalancer) ShouldSkipPrimary() bool {
+	lb.mu.RLock()
+	defer lb.mu.RUnlock()
+	if lb.primary == nil {
+		return false
+	}
+	// 如果主上游连续失败3次，跳过它
+	if lb.primaryFailCount >= 3 {
+		return true
+	}
+	return false
+}
+
+// ClearPrimaryFailure 清除失败计数（当主上游成功时调用）
+func (lb *LoadBalancer) ClearPrimaryFailure() {
+	lb.mu.Lock()
+	defer lb.mu.Unlock()
+	lb.primaryFailCount = 0
 }
 
 // GetPrimary returns the current primary upstream, or nil if in auto hash mode
