@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Architecture Refactor
 status: planning
-stopped_at: Completed 04-01-PLAN.md
-last_updated: "2026-04-05T05:45:26.098Z"
+stopped_at: Completed 04-02-PLAN.md
+last_updated: "2026-04-05T05:58:35.230Z"
 last_activity: 2026-04-05 — v2.0 roadmap created (Phases 4-6)
 progress:
   total_phases: 3
   completed_phases: 0
   total_plans: 3
-  completed_plans: 1
+  completed_plans: 2
   percent: 0
 ---
 
@@ -64,6 +64,7 @@ Archived to: .planning/milestones/v1.0-ROADMAP.md, v1.0-REQUIREMENTS.md
 | 2. Resilience (v1.0) | 2 | 2 |
 | 3. Persistence (v1.0) | 4 | 4 |
 | Phase 04 P01 | 7min | 3 tasks | 9 files |
+| Phase 04 P02 | 7min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -77,6 +78,8 @@ Recent decisions affecting current work:
 - [Phase 04]: LoadBalancer 改为指针类型以容纳 sync.RWMutex (primary upstream 支持)
 - [Phase 04]: Type alias wrapper 模式用于增量迁移期间保持编译兼容
 - [Phase 04]: UsageStats 封装 Record/GetCounts 方法解决跨包私有字段访问
+- [Phase 04]: ProxyHandler gains SetLoadBalancer/SetDefaultModel setter methods for doReload to update without recreating handler
+- [Phase 04]: AdminHandler receives reloadFn as func() error callback to decouple from App lifecycle
 
 ### Pending Todos
 
@@ -89,6 +92,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-04-05T05:45:26.092Z
-Stopped at: Completed 04-01-PLAN.md
+Last session: 2026-04-05T05:58:35.225Z
+Stopped at: Completed 04-02-PLAN.md
 Resume file: None
