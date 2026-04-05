@@ -123,46 +123,40 @@ func (m Model) handleConfirm(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// handleModelSelect processes model selection input
-// This is the ORIGINAL logic from tui.go -- Task 2 will redesign this for primary upstream
+// handleModelSelect processes primary upstream selection
+// Redesigned in Task 2: index 0 = Auto (hash), 1..N = upstreams
 func (m Model) handleModelSelect(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if msg, ok := msg.(tea.KeyMsg); ok {
 		switch msg.String() {
 		case "up":
-			if m.selectedIndex > 0 {
-				m.selectedIndex--
+			if m.modelSelectIndex > 0 {
+				m.modelSelectIndex--
 			}
 		case "down":
-			if m.selectedIndex < len(m.upstreams)-1 {
-				m.selectedIndex++
+			// 0 = "Auto (hash)", 1..N = upstreams
+			if m.modelSelectIndex < len(m.upstreams) {
+				m.modelSelectIndex++
 			}
 		case "enter":
-			// Select the current upstream's model as its default (not global)
-			if len(m.upstreams) > 0 {
-				us := m.upstreams[m.selectedIndex]
-				if us.Model != "" {
-					// Only update the upstream's model, NOT the global default
-					// The global defaultModel stays unchanged in model-select mode
-					if m.Callbacks.OnUpstreamModelSelected != nil {
-						m.Callbacks.OnUpstreamModelSelected(us)
+			if m.modelSelectIndex == 0 {
+				// Selected "Auto (hash)" -- return to hash distribution
+				if m.Callbacks.OnPrimaryCleared != nil {
+					m.Callbacks.OnPrimaryCleared()
+				}
+				m.primaryUpstream = nil
+			} else {
+				// Selected specific upstream
+				idx := m.modelSelectIndex - 1
+				if idx < len(m.upstreams) {
+					us := m.upstreams[idx]
+					if m.Callbacks.OnPrimarySelected != nil {
+						m.Callbacks.OnPrimarySelected(us)
 					}
+					m.primaryUpstream = us
 				}
 			}
 			m.modelSelectMode = false
 		case "esc":
-			m.modelSelectMode = false
-		case "0", "1", "2", "3", "4", "5", "6", "7", "8", "9":
-			// Direct number selection - select that upstream's model as its default
-			idx := int(msg.Runes[0] - '0')
-			if idx < len(m.upstreams) {
-				us := m.upstreams[idx]
-				if us.Model != "" {
-					// Only update the upstream's model, NOT the global default
-					if m.Callbacks.OnUpstreamModelSelected != nil {
-						m.Callbacks.OnUpstreamModelSelected(us)
-					}
-				}
-			}
 			m.modelSelectMode = false
 		}
 	}

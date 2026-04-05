@@ -45,7 +45,7 @@ type Model struct {
 	logs         []proxy.RequestLog
 	requestCount int64
 	successCount int64
-	defaultModel string // Current default model
+	DefaultModel string // Current default model (exported for cmd/agent-router/main.go)
 
 	// Window size for responsive layout
 	width  int

@@ -218,8 +218,27 @@ func (h *ProxyHandler) proxyWithRetry(w http.ResponseWriter, r *http.Request, re
 	retryCount := 0
 	delay := baseDelay
 
+	// Primary upstream check: if set, try it first
+	primary := h.lb.GetPrimary()
+	if primary != nil {
+		// Verify primary is still in enabled list
+		for _, u := range enabled {
+			if u == primary && u.Enabled {
+				lastUpstream = primary
+				break
+			}
+		}
+	}
+	// If no primary or primary not valid, use normal selection
+	if lastUpstream == nil {
+		lastUpstream = h.lb.SelectNext(nil)
+	}
+
 	for attempt := 0; attempt <= maxRetries; attempt++ {
-		upstream := h.lb.SelectNext(lastUpstream)
+		upstream := lastUpstream
+		if attempt > 0 {
+			upstream = h.lb.SelectNext(lastUpstream)
+		}
 		if upstream == nil {
 			upstream = enabled[0]
 		}

@@ -43,10 +43,16 @@ func (m Model) renderNavigation() string {
 		BorderForeground(mauveColor).
 		Padding(0, 1, 0, 1)
 
-	// Show current model in nav bar
+	// Show current model in nav bar and active upstream
 	modelStr := ""
-	if m.defaultModel != "" {
-		modelStr = modelStyle.Render(" " + m.defaultModel + " ")
+	if m.DefaultModel != "" {
+		modelStr = modelStyle.Render(" " + m.DefaultModel + " ")
+	}
+
+	// Show active primary upstream in nav bar (per D-10)
+	activeUpstreamStr := ""
+	if m.primaryUpstream != nil {
+		activeUpstreamStr = styleRed.Render(" [Primary: " + m.primaryUpstream.Name + "]")
 	}
 
 	content := lipgloss.JoinHorizontal(
@@ -54,6 +60,7 @@ func (m Model) renderNavigation() string {
 		infoStyle.Render(fmt.Sprintf(" %s v%s ", m.serviceName, m.version)),
 		dimStyle.Render(fmt.Sprintf("  Port: %d  Uptime: %s", m.port, time.Since(m.startTime).Round(time.Second))),
 		modelStr,
+		activeUpstreamStr,
 		dimStyle.Render("  "),
 		hintsStyle.Render("[a]Add [e]Edit [d]Del [m]Model [r]Reload [q]Quit "),
 	)
@@ -251,8 +258,8 @@ func (m Model) renderUpstreamList() string {
 	return listStyle.Render(content)
 }
 
-// renderModelSelect renders the model selection view
-// This is the ORIGINAL logic from tui.go -- Task 2 will redesign this for primary upstream
+// renderModelSelect renders the primary upstream selection view
+// Redesigned in Task 2: index 0 = Auto (hash), 1..N = upstreams
 func (m Model) renderModelSelect() string {
 	contentWidth := m.width - 4
 
@@ -282,18 +289,24 @@ func (m Model) renderModelSelect() string {
 
 	var lines []string
 
-	lines = append(lines, headerStyle.Render("Select Default Model (ESC to cancel)"))
+	lines = append(lines, headerStyle.Render("Select Primary Upstream (ESC to cancel)"))
 
-	// Show current default model
-	if m.defaultModel != "" {
-		lines = append(lines, dimStyle.Render("  Current: "+m.defaultModel))
-		lines = append(lines, dimStyle.Render("  "))
+	// Auto option at index 0
+	autoStr := "  Auto (hash) -- FNV hash distribution"
+	if m.modelSelectIndex == 0 {
+		lines = append(lines, selectedItemStyle.Render("▶ "+autoStr))
+	} else {
+		lines = append(lines, dimStyle.Render(autoStr))
 	}
+
+	// Separator
+	lines = append(lines, dimStyle.Render("  ──"))
 
 	if len(m.upstreams) == 0 {
 		lines = append(lines, dimStyle.Render("  (no upstreams configured)"))
 	} else {
 		for i, us := range m.upstreams {
+			idx := i + 1 // modelSelectIndex offset: 1..N
 			status := enabledStyle.Render("●")
 			if !us.Enabled {
 				status = disabledStyle.Render("○")
@@ -302,9 +315,15 @@ func (m Model) renderModelSelect() string {
 			if modelStr == "" {
 				modelStr = "(no model)"
 			}
-			line := fmt.Sprintf("  [%d] %s %s → %s", i, us.Name, status, modelStr)
 
-			if i == m.selectedIndex {
+			// Show star if this is the current primary
+			star := ""
+			if m.primaryUpstream != nil && m.primaryUpstream.Name == us.Name {
+				star = styleRed.Render(" *")
+			}
+			line := fmt.Sprintf("  %s %s [%s] → %s%s", us.Name, status, us.AuthType, modelStr, star)
+
+			if idx == m.modelSelectIndex {
 				lines = append(lines, selectedItemStyle.Render("▶ "+line))
 			} else {
 				lines = append(lines, itemStyle.Render(line))
@@ -313,7 +332,7 @@ func (m Model) renderModelSelect() string {
 	}
 
 	lines = append(lines, dimStyle.Render(""))
-	lines = append(lines, dimStyle.Render("↑↓ Select | Enter to choose | 0-9 Quick select"))
+	lines = append(lines, dimStyle.Render("↑↓ Select | Enter to choose | ESC cancel"))
 
 	content := lipgloss.JoinVertical(
 		lipgloss.Top,
@@ -337,13 +356,23 @@ func (m Model) renderStatus() string {
 	statsStyle := lipgloss.NewStyle().Foreground(textColor)
 	labelStyle := lipgloss.NewStyle().Foreground(subtextColor)
 
+	// Active upstream display (per D-10)
+	var activeStr string
+	if m.primaryUpstream != nil {
+		activeStr = lipgloss.NewStyle().Foreground(mauveColor).Bold(true).Render("Active: " + m.primaryUpstream.Name)
+	} else {
+		activeStr = lipgloss.NewStyle().Foreground(subtextColor).Render("Active: Auto (hash)")
+	}
+
 	// Build stats
 	stats := labelStyle.Render("Total: ") +
 		statsStyle.Render(fmt.Sprintf("%d", total)) +
 		labelStyle.Render(" | Success: ") +
 		greenStyle.Render(fmt.Sprintf("%d", success)) +
 		labelStyle.Render(" | Rate: ") +
-		greenStyle.Render(fmt.Sprintf("%.1f%%", rate))
+		greenStyle.Render(fmt.Sprintf("%.1f%%", rate)) +
+		labelStyle.Render(" | ") +
+		activeStr
 
 	// Last log entry
 	var lastLogStr string
@@ -355,11 +384,17 @@ func (m Model) renderStatus() string {
 		} else if log.StatusCode >= 400 {
 			statusStr = redStyle.Render(fmt.Sprintf("%d", log.StatusCode))
 		}
+		// Fallback prefix per D-11
+		var prefix string
+		if log.RetryAttempt > 0 {
+			prefix = styleRed.Render("[Fallback]") + " "
+		}
 		lastLogStr = labelStyle.Render("Last: ") +
 			statsStyle.Render(log.Timestamp.Format("15:04:05")) +
 			labelStyle.Render(" | ") +
 			statsStyle.Render(fmt.Sprintf("%4dms", log.LatencyMs)) +
 			labelStyle.Render(" | ") +
+			prefix +
 			statsStyle.Render(log.UpstreamName) +
 			labelStyle.Render(" | ") +
 			statusStr

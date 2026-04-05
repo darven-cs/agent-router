@@ -19,6 +19,7 @@ import (
 	"agent-router/internal/proxy"
 	"agent-router/internal/storage"
 	"agent-router/internal/upstream"
+	tui "agent-router/internal/tui"
 )
 
 // App holds all application dependencies, replacing global variables
@@ -142,16 +143,16 @@ func (app *App) Run() error {
 	}()
 
 	// Create TUI model with callbacks for upstream changes
-	tuiModel := NewModel(app.cfg.Service.Name, app.cfg.Service.Version, app.cfg.Service.Port, app.sharedUpstreams.GetAll())
-	tuiModel.defaultModel = app.cfg.Service.Model
-	tuiModel.OnUpstreamAdded = func(u *upstream.Upstream) {
+	tuiModel := tui.NewModel(app.cfg.Service.Name, app.cfg.Service.Version, app.cfg.Service.Port, app.sharedUpstreams.GetAll())
+	tuiModel.DefaultModel = app.cfg.Service.Model
+	tuiModel.Callbacks.OnUpstreamAdded = func(u *upstream.Upstream) {
 		app.sharedUpstreams.Add(u)
 		app.lb.AddUpstream(u)
 		if err := app.persistConfig(); err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to persist config: %v\n", err)
 		}
 	}
-	tuiModel.OnUpstreamUpdated = func(u *upstream.Upstream, oldName string) {
+	tuiModel.Callbacks.OnUpstreamUpdated = func(u *upstream.Upstream, oldName string) {
 		if oldName != "" && oldName != u.Name {
 			app.sharedUpstreams.Delete(oldName)
 			app.lb.DeleteUpstream(oldName)
@@ -162,36 +163,43 @@ func (app *App) Run() error {
 			fmt.Fprintf(os.Stderr, "Failed to persist config: %v\n", err)
 		}
 	}
-	tuiModel.OnUpstreamDeleted = func(name string) {
+	tuiModel.Callbacks.OnUpstreamDeleted = func(name string) {
 		app.sharedUpstreams.Delete(name)
 		app.lb.DeleteUpstream(name)
 		if err := app.persistConfig(); err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to persist config: %v\n", err)
 		}
 	}
-	tuiModel.OnUpstreamToggled = func(u *upstream.Upstream) {
+	tuiModel.Callbacks.OnUpstreamToggled = func(u *upstream.Upstream) {
 		app.sharedUpstreams.Update(u.Name, u)
 		app.lb.UpdateUpstream(u)
 		if err := app.persistConfig(); err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to persist config: %v\n", err)
 		}
 	}
-	tuiModel.OnDefaultModelChanged = func(model string) {
+	tuiModel.Callbacks.OnDefaultModelChanged = func(model string) {
 		app.cfg.Service.Model = model
 		app.proxyHandler.SetDefaultModel(model)
 		if err := app.persistConfig(); err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to persist config: %v\n", err)
 		}
 	}
-	tuiModel.OnUpstreamModelSelected = func(u *upstream.Upstream) {
+	tuiModel.Callbacks.OnUpstreamModelSelected = func(u *upstream.Upstream) {
 		app.sharedUpstreams.Update(u.Name, u)
 		app.lb.UpdateUpstream(u)
 		if err := app.persistConfig(); err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to persist upstream model: %v\n", err)
 		}
 	}
-	tuiModel.OnReload = func() error {
+	tuiModel.Callbacks.OnReload = func() error {
 		return app.doReload()
+	}
+	// Primary upstream callbacks (wired for Task 2)
+	tuiModel.Callbacks.OnPrimarySelected = func(u *upstream.Upstream) {
+		app.lb.SetPrimary(u)
+	}
+	tuiModel.Callbacks.OnPrimaryCleared = func() {
+		app.lb.ClearPrimary()
 	}
 
 	// Run TUI
