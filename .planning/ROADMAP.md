@@ -31,11 +31,12 @@
   2. Developer can find any feature by domain in `cmd/` and `internal/{config,proxy,tui,upstream,storage}/` directories without guessing which file holds it
   3. All 7 global variables are eliminated — every package receives dependencies through constructor functions, verified by `grep -r "^var " internal/` returning zero mutable globals
   4. User can press [m] in TUI to select an upstream model and the proxy immediately routes requests using that model
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 04-01: TBD
-- [ ] 04-02: TBD
+- [ ] 04-01: Leaf package migration (config, upstream, storage) + primary upstream extension
+- [ ] 04-02: Proxy/admin migration + App struct replacing all globals
+- [ ] 04-03: TUI split + primary upstream feature + final cmd/ layout + human verify
 
 ### Phase 5: Event-Driven Decoupling
 **Goal**: Subsystems communicate through typed events instead of hardcoded callbacks, TUI is decomposed into independent components, and config reload works from all three triggers
@@ -79,6 +80,6 @@ Phases execute in numeric order: 4 → 5 → 6
 | 1. Foundation | v1.0 | 1/1 | Complete | 2026-04-04 |
 | 2. Resilience | v1.0 | 2/2 | Complete | 2026-04-04 |
 | 3. Persistence | v1.0 | 4/4 | Complete | 2026-04-04 |
-| 4. Foundation Restructure | v2.0 | 0/? | Not started | - |
+| 4. Foundation Restructure | v2.0 | 0/3 | Not started | - |
 | 5. Event-Driven Decoupling | v2.0 | 0/? | Not started | - |
 | 6. Request Pipeline | v2.0 | 0/? | Not started | - |
