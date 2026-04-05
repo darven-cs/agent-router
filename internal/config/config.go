@@ -29,8 +29,9 @@ type UpstreamConfig struct {
 
 // Config holds the complete service configuration
 type Config struct {
-	Service   ServiceConfig    `yaml:"service"`
-	Upstreams []UpstreamConfig `yaml:"upstreams"`
+	Service         ServiceConfig    `yaml:"service"`
+	Upstreams       []UpstreamConfig `yaml:"upstreams"`
+	PrimaryUpstream string           `yaml:"primary_upstream"` // persisted primary upstream selection
 }
 
 // LoadConfig reads and parses the YAML configuration file

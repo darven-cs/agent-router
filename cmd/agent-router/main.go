@@ -24,17 +24,19 @@ import (
 
 // App holds all application dependencies, replacing global variables
 type App struct {
-	cfg             *config.Config
-	db              *gorm.DB
-	sharedUpstreams *upstream.SharedUpstreams
-	lb              *upstream.LoadBalancer
-	proxyHandler    *proxy.ProxyHandler
-	adminHandler    *admin.AdminHandler
-	usageChan       chan proxy.RequestLog
-	logChan         chan proxy.RequestLog
-	startTime       time.Time
-	execPath        string
-	server          *http.Server
+	cfg                 *config.Config
+	db                  *gorm.DB
+	sharedUpstreams     *upstream.SharedUpstreams
+	lb                  *upstream.LoadBalancer
+	proxyHandler        *proxy.ProxyHandler
+	adminHandler        *admin.AdminHandler
+	usageChan           chan proxy.RequestLog
+	logChan             chan proxy.RequestLog
+	startTime           time.Time
+	execPath            string
+	configPath          string
+	server              *http.Server
+	primaryUpstreamName string // persisted primary upstream selection
 }
 
 // NewApp initializes all application dependencies
@@ -50,6 +52,7 @@ func NewApp() (*App, error) {
 		return nil, fmt.Errorf("failed to get executable path: %w", err)
 	}
 	configPath := filepath.Join(filepath.Dir(app.execPath), "config.yaml")
+	app.configPath = configPath
 
 	// Load configuration
 	app.cfg, err = config.LoadConfig(configPath)
@@ -74,6 +77,17 @@ func NewApp() (*App, error) {
 
 	// Create load balancer
 	app.lb = upstream.NewLoadBalancer(app.cfg.Upstreams)
+
+	// Restore primary upstream from config if set (B+ fix: survives restart)
+	if app.cfg.PrimaryUpstream != "" {
+		for _, u := range app.lb.GetEnabled() {
+			if u.Name == app.cfg.PrimaryUpstream {
+				app.lb.SetPrimary(u)
+				app.primaryUpstreamName = app.cfg.PrimaryUpstream
+				break
+			}
+		}
+	}
 
 	// Create log channel for request updates
 	app.logChan = make(chan proxy.RequestLog, 100)
@@ -197,9 +211,19 @@ func (app *App) Run() error {
 	// Primary upstream callbacks (wired for Task 2)
 	tuiModel.Callbacks.OnPrimarySelected = func(u *upstream.Upstream) {
 		app.lb.SetPrimary(u)
+		app.primaryUpstreamName = u.Name
+		app.cfg.PrimaryUpstream = u.Name
+		if err := config.SaveConfig(app.cfg, app.configPath); err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to persist primary upstream: %v\n", err)
+		}
 	}
 	tuiModel.Callbacks.OnPrimaryCleared = func() {
 		app.lb.ClearPrimary()
+		app.primaryUpstreamName = ""
+		app.cfg.PrimaryUpstream = ""
+		if err := config.SaveConfig(app.cfg, app.configPath); err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to persist primary upstream: %v\n", err)
+		}
 	}
 
 	// Run TUI
@@ -261,8 +285,9 @@ func (app *App) persistConfig() error {
 
 	// Create a new Config with current state
 	newCfg := &config.Config{
-		Service:   app.cfg.Service,
-		Upstreams: upstreamConfigs,
+		Service:         app.cfg.Service,
+		Upstreams:       upstreamConfigs,
+		PrimaryUpstream: app.cfg.PrimaryUpstream,
 	}
 
 	return config.SaveConfig(newCfg, configPath)
@@ -279,6 +304,17 @@ func (app *App) doReload() error {
 
 	// Create new LoadBalancer from config
 	app.lb = upstream.NewLoadBalancer(newCfg.Upstreams)
+
+	// Restore primary upstream if set in config (B+ fix: survives SIGHUP reload)
+	if newCfg.PrimaryUpstream != "" {
+		for _, u := range app.lb.GetEnabled() {
+			if u.Name == newCfg.PrimaryUpstream {
+				app.lb.SetPrimary(u)
+				app.primaryUpstreamName = newCfg.PrimaryUpstream
+				break
+			}
+		}
+	}
 
 	// Create new upstream list from config
 	var newList []*upstream.Upstream
