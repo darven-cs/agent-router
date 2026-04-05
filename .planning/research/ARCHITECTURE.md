@@ -1,542 +1,678 @@
 # Architecture Research
 
-**Domain:** Go API Proxy Service (Local Claude API Router)
-**Researched:** 2026-04-03
+**Domain:** Go API Proxy Service -- v2.0 Modular Refactor
+**Researched:** 2026-04-05
 **Confidence:** HIGH
 
-## Standard Architecture
+## Current State Analysis
+
+### Existing Architecture (v1.0 Monolith)
+
+```
+main.go (assembly + globals)
+  ├── proxy.go     (HTTP routing + auth + retry + model rewrite + logging)
+  ├── tui.go       (838 lines: navigation + forms + model select + rendering)
+  ├── config.go    (YAML load/save)
+  ├── upstream.go  (LoadBalancer + SharedUpstreams)
+  ├── usage.go     (SQLite + async worker)
+  └── admin.go     (status + reload endpoints)
+```
+
+### Coupling Problems Identified
+
+| Problem | Location | Impact |
+|---------|----------|--------|
+| **TUI holds business logic callbacks** | `tui.go` lines 145-151: 6 function callbacks (OnUpstreamAdded, OnUpstreamUpdated, etc.) | TUI knows about SharedUpstreams, LoadBalancer, persistConfig -- cannot test TUI without full system |
+| **main.go wires everything inline** | `main.go` lines 88-136: 50 lines of closure callbacks | Any new feature requiring cross-component coordination must touch main.go |
+| **ProxyHandler does routing** | `proxy.go` lines 77-99: admin endpoint routing inside ServeHTTP | Adding routes means editing ProxyHandler.ServeHTTP |
+| **Global mutable state** | `main.go` lines 17-26: 7 package-level vars (db, lb, proxyHandler, cfg, etc.) | No encapsulation, any file can mutate any state |
+| **Dual channel redundancy** | `proxy.go` lines 301-329: logToChan + logToChanWithTokens | Two separate channels for same logical event with different data |
+| **Auth logic duplicated** | `proxy.go` lines 101-113 and `admin.go` lines 50-61: identical token extraction | Any auth change requires editing two places |
+
+## Target Architecture
 
 ### System Overview
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                         API Layer                                │
-├─────────────────────────────────────────────────────────────────┤
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐              │
-│  │   HTTP      │  │   TUI       │  │  Metrics    │              │
-│  │   Server    │  │   Render    │  │  Endpoint   │              │
-│  │  (net/http) │  │  (bubbletea)│  │  /metrics   │              │
-│  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘              │
-│         │                │                │                     │
-├─────────┴────────────────┴────────────────┴─────────────────────┤
-│                     Middleware Chain                             │
-│  ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐              │
-│  │  Auth   │→ │ Logging │→ │ Rate    │→ │ Request │              │
-│  │         │  │         │  │ Limit   │  │ ID      │              │
-│  └────┬────┘  └────┬────┘  └────┬────┘  └────┬────┘              │
-│       │            │            │            │                   │
-├───────┴────────────┴────────────┴────────────┴──────────────────┤
-│                      Router Core                                 │
-│  ┌─────────────────────────────────────────────────────────┐      │
-│  │              Load Balancer + Retry Logic                │      │
-│  │   ┌─────────┐  ┌─────────┐  ┌─────────┐                │      │
-│  │   │Provider1│  │Provider2│  │Provider3│                │      │
-│  │   └─────────┘  └─────────┘  └─────────┘                │      │
-│  └─────────────────────────────────────────────────────────┘      │
-├─────────────────────────────────────────────────────────────────┤
-│                     Data Layer                                    │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐            │
-│  │   SQLite     │  │   Config     │  │   Usage      │            │
-│  │   (journal)  │  │   Store      │  │   Tracker    │            │
-│  └──────────────┘  └──────────────┘  └──────────────┘            │
-└─────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│                          cmd/agent-router/                        │
+│                      main.go (thin assembly only)                 │
+├──────────────────────────────────────────────────────────────────┤
+│                                                                   │
+│  ┌─────────────────────────────────────────────────────────────┐ │
+│  │                    internal/eventbus/                        │ │
+│  │              EventBus (Go channel pub/sub)                   │ │
+│  │   Subscribe: "upstream.added", "config.reload", etc.        │ │
+│  └──────────┬────────────────────┬─────────────────────────────┘ │
+│             │                    │                                │
+│  ┌──────────▼──────────┐  ┌─────▼──────────────────────────────┐│
+│  │ internal/proxy/      │  │ internal/tui/                      ││
+│  │ ┌─────────────────┐  │  │ ┌──────────────────────────────┐  ││
+│  │ │ middleware/      │  │  │ │ app.go (root model)          │  ││
+│  │ │  auth.go         │  │  │ ├──────────────────────────────┤  ││
+│  │ │  logging.go      │  │  │ │ components/                  │  ││
+│  │ │  requestid.go    │  │  │ │  nav.go                      │  ││
+│  │ │  modelrewrite.go │  │  │ │  upstream_list.go            │  ││
+│  │ ├─────────────────┤  │  │ │  form.go                     │  ││
+│  │ │ handler.go       │  │  │ │  model_select.go             │  ││
+│  │ │ router.go        │  │  │ │  confirm.go                  │  ││
+│  │ │ retry.go         │  │  │ │  status.go                   │  ││
+│  │ ├─────────────────┤  │  │ ├──────────────────────────────┤  ││
+│  │ │ balancer.go      │  │  │ │ styles/                      │  ││
+│  │ └─────────────────┘  │  │ │  theme.go                    │  ││
+│  └──────────────────────┘  │ └──────────────────────────────┘  ││
+│                             └────────────────────────────────────┘│
+│  ┌──────────────────────┐  ┌────────────────────────────────────┐│
+│  │ internal/config/     │  │ internal/storage/                  ││
+│  │  config.go           │  │  sqlite.go                         ││
+│  │  (load/save/watch)   │  │  usage.go                          ││
+│  └──────────────────────┘  └────────────────────────────────────┘│
+│  ┌──────────────────────┐                                        │
+│  │ internal/upstream/   │  Types shared across packages          │
+│  │  upstream.go         │  (Upstream, LoadBalancer, Pool)       │
+│  └──────────────────────┘                                        │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
 ### Component Responsibilities
 
-| Component | Responsibility | Typical Implementation |
-|-----------|----------------|------------------------|
-| HTTP Server | Accept requests, apply middleware, route to handler | `net/http.Server` with custom `ServeMux` |
-| TUI Renderer | Display status, logs, metrics in terminal | `github.com/charmbracelet/bubbletea` |
-| Middleware Chain | Authenticate, log, rate-limit, add request context | Function adapters returning `http.Handler` |
-| Load Balancer | Distribute requests across providers | Round-robin, weighted, or least-latency |
-| Provider Manager | Track upstream health, manage connections | Interface with health checks |
-| Retry Logic | Handle transient failures with backoff | Exponential backoff with jitter |
-| SQLite Tracker | Record API usage per provider/customer | `database/sql` with WAL mode |
-| Config Store | Manage providers, API keys, routing rules | In-memory with file persistence |
+| Component | Responsibility | New or Modified |
+|-----------|----------------|-----------------|
+| `cmd/agent-router/main.go` | Thin assembly: create EventBus, wire subscribers, start HTTP + TUI | **Modified** (drastically simplified) |
+| `internal/eventbus/` | Typed pub/sub via Go channels; replaces direct callbacks | **NEW** |
+| `internal/proxy/middleware/` | Composable http.Handler decorators (auth, logging, model rewrite) | **NEW** (extracted from proxy.go) |
+| `internal/proxy/handler.go` | Route to middleware chain, dispatch to upstream | **Modified** (simplified) |
+| `internal/proxy/retry.go` | Exponential backoff retry with isRetryable check | **Modified** (extracted) |
+| `internal/proxy/balancer.go` | LoadBalancer + SharedUpstreams | **Modified** (moved from upstream.go) |
+| `internal/tui/app.go` | Root bubbletea model, message routing to sub-models | **Modified** (simplified) |
+| `internal/tui/components/` | Individual UI components (nav, list, form, confirm, status) | **NEW** (extracted from tui.go) |
+| `internal/tui/styles/` | Catppuccin theme, shared style definitions | **NEW** (extracted from tui.go) |
+| `internal/config/` | Config load/save/watch | **Modified** (moved from config.go) |
+| `internal/storage/` | SQLite init, usage worker, stats | **Modified** (moved from usage.go) |
+| `internal/upstream/` | Upstream type, pool management | **Modified** (consolidated) |
 
 ## Recommended Project Structure
 
 ```
-cmd/
-├── proxy/                 # Main proxy binary
-│   └── main.go           # Entry point, signal handling
-└── cli/                  # CLI tooling (optional)
-
-internal/
-├── proxy/
-│   ├── handler.go        # HTTP request handlers
-│   ├── middleware/
-│   │   ├── auth.go       # API key validation
-│   │   ├── logging.go    # Request/response logging
-│   │   ├── ratelimit.go  # Rate limiting
-│   │   └── requestid.go  # Request ID propagation
-│   ├── router/
-│   │   ├── balancer.go   # Load balancing strategies
-│   │   ├── provider.go   # Upstream provider management
-│   │   ├── retry.go      # Retry with backoff
-│   │   └── router.go     # Main routing logic
-│   └── transport/
-│       └── client.go     # HTTP client for upstream calls
+agent-router/
+├── cmd/
+│   └── agent-router/
+│       └── main.go              # Thin entry: wire event bus, start server + TUI
 │
-├── storage/
-│   ├── sqlite.go         # SQLite connection and operations
-│   ├── usage.go          # Usage tracking queries
-│   └── config.go        # Configuration persistence
+├── internal/
+│   ├── eventbus/
+│   │   └── bus.go               # Event definitions + pub/sub via channels
+│   │
+│   ├── proxy/
+│   │   ├── handler.go           # HTTP routing, middleware chain assembly
+│   │   ├── retry.go             # Retry with exponential backoff
+│   │   ├── balancer.go          # LoadBalancer + SharedUpstreams
+│   │   └── middleware/
+│   │       ├── auth.go          # API key extraction + validation
+│   │       ├── logging.go       # Request logging to event bus
+│   │       ├── requestid.go     # Request ID extraction
+│   │       └── modelrewrite.go  # Model name transformation
+│   │
+│   ├── tui/
+│   │   ├── app.go               # Root tea.Model, Update/View delegation
+│   │   ├── components/
+│   │   │   ├── nav.go           # Top navigation bar
+│   │   │   ├── upstream_list.go # Main upstream list view
+│   │   │   ├── form.go          # Add/Edit form
+│   │   │   ├── model_select.go  # Model selection view
+│   │   │   ├── confirm.go       # Confirmation dialog
+│   │   │   └── status.go        # Bottom status bar
+│   │   └── styles/
+│   │       └── theme.go         # Catppuccin palette, shared styles
+│   │
+│   ├── config/
+│   │   └── config.go            # Config types, LoadConfig, SaveConfig
+│   │
+│   ├── storage/
+│   │   ├── sqlite.go            # DB init, WAL mode, schema migration
+│   │   └── usage.go             # UsageLog model, worker, stats
+│   │
+│   └── upstream/
+│       └── upstream.go          # Upstream type, UpstreamConfig
 │
-├── tui/
-│   ├── app.go            # Bubbletea application
-│   ├── views/
-│   │   ├── dashboard.go  # Main dashboard view
-│   │   ├── logs.go       # Log stream view
-│   │   └── providers.go  # Provider status view
-│   └── state.go          # TUI state management
-│
-└── config/
-    └── config.go         # Configuration types and loading
-
-pkg/
-├── models/
-│   ├── provider.go       # Provider model
-│   ├── request.go        # API request/response models
-│   └── usage.go          # Usage record model
-│
-└── logging/
-    └── logger.go         # Structured logging setup
+├── go.mod
+├── go.sum
+├── config.yaml
+└── Makefile
 ```
 
 ### Structure Rationale
 
-- **cmd/proxy/:** Single binary entry point, easy deployment
-- **internal/proxy/:** Core proxy logic, not importable by other modules
-- **internal/storage/:** SQLite operations isolated for testing and migration
-- **internal/tui/:** TUI separated to avoid importing terminal libs in API server
-- **internal/proxy/middleware/:** Composable middleware, easy to add/remove
-- **internal/proxy/router/:** Routing logic isolated from transport
-- **pkg/models/:** Shared types between components
-- **pkg/logging/:** Centralized logging configuration
+- **`cmd/agent-router/`**: Single binary entry point per [official Go module layout](https://go.dev/doc/modules/layout). Keeps root directory clean.
+- **`internal/`**: All packages here cannot be imported externally, giving freedom to refactor APIs without breakage.
+- **`internal/eventbus/`**: Single file sufficient for this scale. Events are typed Go structs, not stringly-typed.
+- **`internal/proxy/middleware/`**: Separate sub-package because each middleware is self-contained and testable independently.
+- **`internal/tui/components/`**: Each component owns its own Update/View methods following the nested model pattern.
+- **`internal/tui/styles/`**: Theme extraction prevents 100+ lines of style declarations polluting component files.
 
 ## Architectural Patterns
 
-### Pattern 1: Middleware Chain (Decorator Pattern)
+### Pattern 1: Event Bus (Go Channel Pub/Sub)
 
-**What:** Chain of http.HandlerFunc decorators that process requests before/after the core handler.
+**What:** A central event bus using typed Go channels replaces direct function callbacks between TUI and business logic.
 
-**When to use:** Cross-cutting concerns like auth, logging, rate-limiting.
+**When to use:** When multiple components need to react to the same event (TUI update + config persist + LB update on upstream change). When you want to decouple event producers from consumers.
 
-**Trade-offs:** Simple to implement, but order matters and deep chains add latency.
+**Why this over callbacks:** The current `main.go` wires 6 closures that each call SharedUpstreams, LoadBalancer, and persistConfig. Every new feature that needs cross-component coordination requires editing main.go. An event bus lets each component subscribe independently.
 
-**Example:**
+**Trade-offs:** Slight runtime overhead from channel operations (negligible at this scale). Adds one abstraction layer. Not needed for 1:1 direct calls.
+
+**Implementation:**
 ```go
-// Middleware type
+// internal/eventbus/bus.go
+
+// Event types -- each is a distinct Go type for type-safe dispatch
+type Event interface{ eventMarker() }
+
+type UpstreamAddedEvent struct{ Upstream *upstream.Upstream }
+func (UpstreamAddedEvent) eventMarker() {}
+
+type UpstreamUpdatedEvent struct{ Upstream *upstream.Upstream; OldName string }
+func (UpstreamUpdatedEvent) eventMarker() {}
+
+type UpstreamDeletedEvent struct{ Name string }
+func (UpstreamDeletedEvent) eventMarker() {}
+
+type ConfigReloadRequestEvent struct{}
+func (ConfigReloadRequestEvent) eventMarker() {}
+
+type ConfigReloadedEvent struct{ Config *config.Config }
+func (ConfigReloadedEvent) eventMarker() {}
+
+type ModelSelectedEvent struct{ Upstream *upstream.Upstream }
+func (ModelSelectedEvent) eventMarker() {}
+
+type RequestLogEvent struct{ Log RequestLog }
+func (RequestLogEvent) eventMarker() {}
+
+// EventBus provides type-safe pub/sub via Go channels
+type EventBus struct {
+    subscribers map[reflect.Type][]chan Event
+    mu          sync.RWMutex
+}
+
+func New() *EventBus {
+    return &EventBus{
+        subscribers: make(map[reflect.Type][]chan Event),
+    }
+}
+
+// Subscribe returns a read-only channel for a specific event type.
+// The caller drains the channel in its own goroutine.
+func Subscribe[T Event](bus *EventBus) <-chan T {
+    ch := make(chan T, 64)
+    bus.mu.Lock()
+    typ := reflect.TypeOf((*T)(nil)).Elem()
+    // Wrap typed channel into the generic subscriber list
+    bus.subscribers[typ] = append(bus.subscribers[typ], wrapChan(ch))
+    bus.mu.Unlock()
+    return ch
+}
+
+// Publish sends an event to all subscribers of that type.
+// Non-blocking: drops if channel full (acceptable for TUI updates).
+func Publish(bus *EventBus, evt Event) {
+    typ := reflect.TypeOf(evt)
+    bus.mu.RLock()
+    for _, ch := range bus.subscribers[typ] {
+        select {
+        case ch <- evt:
+        default: // drop if consumer is slow
+        }
+    }
+    bus.mu.RUnlock()
+}
+```
+
+**Wiring in main.go becomes:**
+```go
+bus := eventbus.New()
+
+// Config subscriber: persists on any upstream change
+configSub := eventbus.Subscribe[UpstreamAddedEvent](bus)
+go func() {
+    for evt := range configSub {
+        persistConfig()
+    }
+}()
+
+// LB subscriber: updates load balancer
+lbSub := eventbus.Subscribe[UpstreamAddedEvent](bus)
+go func() {
+    for evt := range lbSub {
+        lb.AddUpstream(evt.Upstream)
+    }
+}()
+
+// TUI publishes events instead of calling callbacks directly
+```
+
+### Pattern 2: Middleware Chain (Onion/Decorator)
+
+**What:** Each cross-cutting concern becomes a standalone `func(http.Handler) http.Handler` that wraps the next handler. Handlers are chained left-to-right, executing outer-to-inner then inner-to-outer on return.
+
+**When to use:** For HTTP request processing concerns that apply to multiple routes (auth, logging, request ID, model rewriting).
+
+**Why this over current approach:** Currently `proxy.go` mixes routing, auth, model rewriting, retry, and logging in a single 335-line file. Middleware extraction lets each concern be tested independently and reordered without touching others.
+
+**Trade-offs:** Slightly more files. Each middleware is trivially testable. No third-party library needed -- the pattern is pure stdlib.
+
+**Implementation:**
+```go
+// internal/proxy/middleware/middleware.go
+
 type Middleware func(http.Handler) http.Handler
 
-// Chain applies middlewares left-to-right
-func Chain(h http.Handler, middlewares ...Middleware) http.Handler {
-    for i := len(middlewares) - 1; i >= 0; i-- {
-        h = middlewares[i](h)
+// Chain builds a middleware chain. Middlewares are applied left-to-right:
+// Chain(h, A, B, C) means A wraps B wraps C wraps h.
+func Chain(h http.Handler, mws ...Middleware) http.Handler {
+    for i := len(mws) - 1; i >= 0; i-- {
+        h = mws[i](h)
     }
     return h
 }
 
-// Usage
-handler := Chain(
-    myHandler,
-    withAuth,
-    withLogging,
-    withRateLimit,
-)
-
-// Implementation
-func withAuth(next http.Handler) http.Handler {
-    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-        if !validateAPIKey(r.Header.Get("Authorization")) {
-            http.Error(w, "Unauthorized", 401)
-            return
-        }
-        next.ServeHTTP(w, r)
-    })
-}
-```
-
-### Pattern 2: Provider Pool with Health Checks
-
-**What:** Maintain a pool of upstream providers with health tracking and automatic failover.
-
-**When to use:** Multiple API providers with failover requirements.
-
-**Trade-offs:** More complex than single provider, but provides resilience.
-
-**Example:**
-```go
-type Provider struct {
-    Name    string
-    BaseURL string
-    APIKey  string
-    Weight  int // for weighted routing
-
-    mu           sync.RWMutex
-    healthy      bool
-    latencyP99   time.Duration
-    failureCount int
-}
-
-type ProviderPool struct {
-    providers []*Provider
-    current   atomic.Int64 // round-robin index
-}
-
-func (p *ProviderPool) Next() *Provider {
-    // Round-robin with health filtering
-    n := int(p.current.Add(1))
-    filtered := p.HealthyProviders()
-    if len(filtered) == 0 {
-        return p.providers[n % len(p.providers)] // fallback to all
-    }
-    return filtered[n % len(filtered)]
-}
-
-func (p *ProviderPool) HealthyProviders() []*Provider {
-    p.mu.RLock()
-    defer p.mu.RUnlock()
-    healthy := make([]*Provider, 0)
-    for _, prov := range p.providers {
-        if prov.IsHealthy() {
-            healthy = append(healthy, prov)
-        }
-    }
-    return healthy
-}
-```
-
-### Pattern 3: Retry with Exponential Backoff
-
-**What:** Failed requests are retried with increasing delays and jitter.
-
-**When to use:** Unreliable upstream services, network transient failures.
-
-**Trade-offs:** Increases success rate but adds latency for failing requests.
-
-**Example:**
-```go
-func WithRetry(ctx context.Context, fn func() error, maxRetries int) error {
-    backoff := 100 * time.Millisecond
-
-    for attempt := 0; attempt <= maxRetries; attempt++ {
-        err := fn()
-        if err == nil {
-            return nil
-        }
-
-        // Don't retry on context cancellation or non-retryable errors
-        if ctx.Err() != nil || !isRetryable(err) {
-            return err
-        }
-
-        if attempt < maxRetries {
-            // Exponential backoff with jitter
-            jitter := time.Duration(rand.Int63n(int64(backoff / 2)))
-            sleep := backoff + jitter
-
-            select {
-            case <-ctx.Done():
-                return ctx.Err()
-            case <-time.After(sleep):
+// internal/proxy/middleware/auth.go
+func Auth(validKey string) Middleware {
+    return func(next http.Handler) http.Handler {
+        return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+            token := extractToken(r) // shared helper, eliminates duplication
+            if token != validKey {
+                writeError(w, http.StatusUnauthorized, "authentication_error", "Invalid API key")
+                return
             }
-
-            backoff *= 2
-            if backoff > 30*time.Second {
-                backoff = 30 * time.Second
-            }
-        }
+            next.ServeHTTP(w, r)
+        })
     }
-    return fmt.Errorf("max retries exceeded")
+}
+
+// internal/proxy/middleware/modelrewrite.go
+func ModelRewrite(defaultModel string, getUpstreamModel func() string) Middleware {
+    return func(next http.Handler) http.Handler {
+        return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+            // Read, transform, replace body
+            // ...extracted from proxy.go lines 129-137
+            next.ServeHTTP(w, r.WithContext(ctx))
+        })
+    }
 }
 ```
 
-### Pattern 4: Concurrent TUI and HTTP Server
-
-**What:** Run HTTP server and TUI in separate goroutines with shared state via channels.
-
-**When to use:** CLI tool that needs both API serving and terminal UI.
-
-**Trade-offs:** Requires careful synchronization but provides real-time feedback.
-
-**Example:**
+**Assembly in handler.go:**
 ```go
-func Run() error {
-    // Shared state via channels
-    stateCh := make(chan UIState, 100)
-    logCh := make(chan LogEntry, 1000)
+// internal/proxy/handler.go
 
-    // Start HTTP server
-    srv := &http.Server{Addr: ":8080", Handler: buildHandler(stateCh, logCh)}
-    go func() {
-        if err := srv.ListenAndServe(); err != http.ErrServerClosed {
-            log.Fatal(err)
-        }
-    }()
+func NewHandler(cfg *config.Config, lb *balancer.LoadBalancer, bus *eventbus.EventBus) http.Handler {
+    mux := http.NewServeMux()
+    mux.HandleFunc("/v1/messages", handleMessages)
+    mux.HandleFunc("/admin/status", handleAdminStatus)
+    mux.HandleFunc("/admin/reload", handleAdminReload)
 
-    // Start TUI
-    p := tea.NewProgram(app.New(stateCh, logCh))
-    if _, err := p.Run(); err != nil {
-        return fmt.Errorf("TUI error: %w", err)
-    }
-
-    // Shutdown HTTP server after TUI exits
-    ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-    defer cancel()
-    return srv.Shutdown(ctx)
+    return Chain(mux,
+        middleware.RequestID(),
+        middleware.Logging(bus),
+        middleware.Auth(cfg.Service.APIKey),
+    )
 }
 ```
 
-### Pattern 5: SQLite Usage Tracking with WAL Mode
+### Pattern 3: TUI Componentization (Nested Models)
 
-**What:** Use SQLite with WAL mode for concurrent reads during writes.
+**What:** The monolithic 838-line `tui.go` is decomposed into a root `app.go` model that delegates `Update()` and `View()` to child component models. Each component manages its own state.
 
-**When to use:** Tracking API usage without blocking request handling.
+**When to use:** When a single bubbletea model exceeds ~300 lines with multiple distinct visual modes (navigation, form, confirmation, model selection).
 
-**Trade-offs:** SQLite limits write concurrency; WAL helps but not unlimited.
+**Why this over current approach:** The current `model` struct has 15+ fields for different modes (formMode, formData, formField, modelSelectMode, confirmMode, confirmType). Each mode's Update/View logic is interleaved in a single file. Componentization isolates each mode.
 
-**Example:**
+**Trade-offs:** More files. Requires a message-routing pattern in the root model. But each component becomes independently understandable and testable.
+
+**Implementation (nested model pattern):**
 ```go
-func InitDB(path string) (*sql.DB, error) {
-    db, err := sql.Open("sqlite3", path)
-    if err != nil {
-        return nil, err
-    }
+// internal/tui/app.go -- root model
 
-    // Enable WAL mode for better concurrency
-    if _, err := db.Exec("PRAGMA journal_mode=WAL"); err != nil {
-        return nil, err
-    }
+type AppModel struct {
+    width, height int
 
-    // Increase connection pool for concurrent reads
-    db.SetMaxOpenConns(10)
-    db.SetMaxIdleConns(5)
+    // Child components
+    nav           components.NavComponent
+    upstreamList  components.UpstreamListComponent
+    form          components.FormComponent
+    modelSelect   components.ModelSelectComponent
+    confirm       components.ConfirmComponent
+    statusBar     components.StatusBarComponent
 
-    return db, nil
+    // Which component is active in the content area
+    activeView    ViewType  // "list", "form-add", "form-edit", "model-select", "confirm-delete", "confirm-shutdown"
+
+    // Shared data
+    upstreams     []*upstream.Upstream
+    defaultModel  string
+    eventBus      *eventbus.EventBus
 }
 
-// Non-blocking usage record
-func RecordUsage(ctx context.Context, db *sql.DB, usage UsageRecord) error {
-    // Use separate goroutine to avoid blocking request
-    errCh := make(chan error, 1)
-    go func() {
-        _, err := db.ExecContext(ctx,
-            `INSERT INTO usage (provider, customer_id, tokens, latency_ms, timestamp)
-             VALUES (?, ?, ?, ?, ?)`,
-            usage.Provider, usage.CustomerID, usage.Tokens, usage.LatencyMs, time.Now())
-        errCh <- err
-    }()
-
-    select {
-    case err := <-errCh:
-        return err
-    case <-ctx.Done():
-        return ctx.Err() // Don't let SQLite slow down the request
+func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+    switch msg := msg.(type) {
+    case tea.WindowSizeMsg:
+        m.width, m.height = msg.Width, msg.Height
+        // Propagate size to all children
+        m.nav.SetSize(m.width)
+        m.statusBar.SetSize(m.width)
+    case RequestLog:
+        m.statusBar.UpdateLog(msg)
     }
+
+    // Route to active content component
+    var cmd tea.Cmd
+    switch m.activeView {
+    case "list":
+        m.upstreamList, cmd = m.upstreamList.Update(msg)
+        m.handleListActions(&m)  // check if list emitted a mode change
+    case "form-add", "form-edit":
+        m.form, cmd = m.form.Update(msg)
+        m.handleFormActions(&m)  // check if form submitted or cancelled
+    case "model-select":
+        m.modelSelect, cmd = m.modelSelect.Update(msg)
+    case "confirm-delete", "confirm-shutdown":
+        m.confirm, cmd = m.confirm.Update(msg)
+    }
+    return m, cmd
+}
+
+func (m AppModel) View() string {
+    nav := m.nav.View()
+
+    var content string
+    switch m.activeView {
+    case "list":
+        content = m.upstreamList.View()
+    case "form-add", "form-edit":
+        content = m.form.View()
+    case "model-select":
+        content = m.modelSelect.View()
+    case "confirm-delete", "confirm-shutdown":
+        content = m.confirm.View()
+    }
+
+    status := m.statusBar.View()
+    return lipgloss.JoinVertical(lipgloss.Top, nav, content, status)
 }
 ```
+
+**Component interface:**
+```go
+// internal/tui/components/component.go
+
+// Component is a simplified interface for TUI sub-models.
+// Unlike full tea.Model, components return an Action to signal
+// intent to the parent rather than using tea.Cmd.
+type Component interface {
+    Update(msg tea.Msg) (Component, tea.Cmd)
+    View() string
+    SetSize(width int)
+}
+
+// Action signals from child to parent about state transitions
+type Action struct {
+    Type    string      // "submit", "cancel", "select", "delete", "mode-change"
+    Payload interface{} // e.g., *Upstream for submit
+}
+```
+
+### Pattern 4: Standard Go Project Layout
+
+**What:** Follow the [official Go module layout](https://go.dev/doc/modules/layout) with `cmd/` for entry points and `internal/` for all non-exportable packages.
+
+**When to use:** When a project exceeds a single flat directory of ~7 files and needs clear boundaries between subsystems.
+
+**Why this over flat layout:** The current flat layout with `package main` everywhere means every file can access every global variable. Moving to `internal/` packages enforces compile-time boundaries -- `internal/tui` cannot import `internal/proxy` (and vice versa) unless you explicitly allow it.
+
+**Trade-offs:** More import paths. Slightly more boilerplate for type passing. But the compiler enforces boundaries that currently only exist by convention.
 
 ## Data Flow
 
-### Request Flow
+### Request Flow (After Refactor)
 
 ```
 Client Request
-    │
-    ▼
-┌─────────────────┐
-│  HTTP Server    │ Accept connection, read request
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│  Middleware    │ Auth → Log → RateLimit → RequestID
-│  Chain          │
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│  Router         │ Extract target, select provider
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│  Load Balancer  │ Select healthy provider (round-robin/weighted)
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│  Retry Logic    │ Execute with backoff on failure
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│  Transport      │ Forward request to upstream
-│  Client         │
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│  SQLite         │ Record usage (async, non-blocking)
-└────────┬────────┘
-         │
-         ▼
-Response ← Client
+    |
+    v
++-------------------+
+|  http.Server      |  Accept connection
++--------+----------+
+         |
+         v
++-------------------+
+|  Middleware Chain  |  RequestID -> Logging -> Auth
++--------+----------+
+         |
+         v
++-------------------+
+|  ServeMux         |  Route: /v1/messages, /admin/status, /admin/reload
++--------+----------+
+         |
+         v
++-------------------+
+|  handleMessages   |  Read body -> ModelRewrite middleware already handled
++--------+----------+
+         |
+         v
++-------------------+
+|  Retry Loop       |  SelectNext(LB) -> proxyRequest -> isRetryable?
++--------+----------+
+         |
+         v
++-------------------+
+|  Publish Event    |  EventBus.Publish(RequestLogEvent{...})
++--------+----------+
+         |
+    +----+----+------------+
+    |         |            |
+    v         v            v
+ TUI        SQLite     Stats
+(subscribe) (subscribe) (subscribe)
 ```
 
-### State Management
+### Event Flow (After Refactor)
 
 ```
-┌──────────────────────────────────────────────────────┐
-│                   Provider State                      │
-│  ┌─────────┐  ┌─────────┐  ┌─────────┐              │
-│  │Healthy  │  │Latency  │  │Failures │              │
-│  │ flag    │  │ p99     │  │ count   │              │
-│  └────┬────┘  └────┬────┘  └────┬────┘              │
-│       │            │            │                     │
-│       └────────────┴────────────┘                     │
-│                    │                                   │
-│                    ▼ (RWMutex protect)                 │
-│              Provider Manager                          │
-└────────────────────────┬───────────────────────────────┘
-                         │
-                         ▼ (channel)
-┌──────────────────────────────────────────────────────┐
-│                    TUI State                          │
-│  ┌─────────┐  ┌─────────┐  ┌─────────┐              │
-│  │Dashboard│  │Provider │  │  Log    │              │
-│  │  View   │  │  View   │  │  View   │              │
-│  └─────────┘  └─────────┘  └─────────┘              │
-└──────────────────────────────────────────────────────┘
+TUI User Action (e.g., "add upstream")
+    |
+    v
++------------------------+
+|  TUI form submits      |  FormComponent detects submit
++----------+-------------+
+           |
+           v
++------------------------+
+|  EventBus.Publish(     |  UpstreamAddedEvent{Upstream: ...}
+|    UpstreamAddedEvent) |
++----------+-------------+
+           |
+     +-----+------+--------------+
+     |            |              |
+     v            v              v
++---------+ +----------+ +------------+
+| Config  | |    LB    | | SharedPool |
+|persist  | |AddUpstream| |   .Add    |
++---------+ +----------+ +------------+
 ```
 
 ### Key Data Flows
 
-1. **Request path:** HTTP Request → Middleware → Router → LoadBalancer → Provider → Response
-2. **Usage tracking:** Request completion → Usage record → SQLite (async goroutine)
-3. **Health updates:** Provider health check → State update → TUI notification via channel
-4. **Log streaming:** Any component → Log channel → TUI LogView
-
-## Scaling Considerations
-
-| Scale | Architecture Adjustments |
-|-------|--------------------------|
-| 0-1k users | Monolith fine; single provider; SQLite adequate |
-| 1k-10k users | Multiple providers; connection pooling; WAL mode critical |
-| 10k-100k users | Redis instead of SQLite; provider autoscaling; circuit breakers |
-| 100k+ users | Consider request queuing; dedicated metrics DB; CDN front |
-
-### Scaling Priorities
-
-1. **First bottleneck:** SQLite write contention
-   - Fix: Move usage tracking to background goroutine, use WAL mode
-2. **Second bottleneck:** Single provider saturation
-   - Fix: Add provider pool with load balancing
-3. **Third bottleneck:** TUI blocking on slow renders
-   - Fix: Batch updates, use virtual scrolling
-
-## Anti-Patterns
-
-### Anti-Pattern 1: Blocking SQLite on Request Path
-
-**What people do:** Execute `db.ExecContext` synchronously in the request handler.
-
-**Why it's wrong:** SQLite locks on writes; slow writes block the response.
-
-**Do this instead:** Queue usage records to a goroutine channel; write async.
-
-```go
-// BAD - blocks response
-func handler(w http.ResponseWriter, r *http.Request) {
-    resp := proxyRequest(r)
-    db.Exec("INSERT INTO usage ...", resp) // BLOCKS!
-    json.NewEncoder(w).Encode(resp)
-}
-
-// GOOD - non-blocking
-func handler(w http.ResponseWriter, r *http.Request) {
-    resp := proxyRequest(r)
-    go recordUsage(resp) // async
-    json.NewEncoder(w).Encode(resp)
-}
-```
-
-### Anti-Pattern 2: No Provider Health Tracking
-
-**What people do:** Always route to same provider or random provider without health awareness.
-
-**Why it's wrong:** Failing provider causes cascading errors.
-
-**Do this instead:** Track latency, failures, mark unhealthy providers; exclude from rotation.
-
-### Anti-Pattern 3: Global Mutex for All Provider State
-
-**What people do:** Use single `sync.Mutex` protecting entire provider pool.
-
-**Why it's wrong:** All read operations block each other.
-
-**Do this instead:** Use `sync.RWMutex` for read-heavy workloads, or atomics for simple counters.
-
-```go
-// BAD
-type Pool struct {
-    mu    sync.Mutex
-    provs []*Provider
-}
-
-// GOOD
-type Pool struct {
-    mu    sync.RWMutex
-    provs []*Provider
-}
-
-func (p *Pool) IsHealthy(name string) bool {
-    p.mu.RLock() // Multiple readers OK
-    defer p.mu.RUnlock()
-    // ...
-}
-```
-
-### Anti-Pattern 4: Retry Without Jitter
-
-**What people do:** Retries with fixed backoff intervals.
-
-**Why it's wrong:** Synchronized retries from multiple clients cause thundering herd.
-
-**Do this instead:** Add random jitter to backoff windows.
+1. **Request path:** Client -> Middleware Chain (RequestID, Auth, Logging) -> ServeMux -> handleMessages -> Retry Loop -> Upstream -> Response
+2. **Usage tracking:** RequestLogEvent published to EventBus -> SQLite subscriber writes async -> Stats subscriber updates counters
+3. **Config changes:** TUI publishes event -> Config subscriber calls SaveConfig -> LB subscriber updates LoadBalancer -> Pool subscriber updates SharedUpstreams
+4. **Config reload (SIGHUP/Admin):** ConfigReloadRequestEvent -> Config subscriber loads new config -> publishes ConfigReloadedEvent -> all subscribers update from new config
 
 ## Integration Points
 
-### External Services
+### New Components vs Modified
 
-| Service | Integration Pattern | Notes |
-|---------|---------------------|-------|
-| Anthropic API | HTTP client with custom transport | Set timeouts, handle streaming |
-| OpenRouter | HTTP client | Different endpoint structure |
-| LocalAI | HTTP client | May need special headers |
-| SQLite | database/sql driver | Use WAL mode, limit connections |
+| File | Status | What Changes |
+|------|--------|-------------|
+| `cmd/agent-router/main.go` | **Modified** | Reduced from 273 to ~80 lines; only assembly + wiring |
+| `internal/eventbus/bus.go` | **NEW** | ~100 lines; typed channel pub/sub |
+| `internal/proxy/handler.go` | **Modified** | Extracted from proxy.go; routing only, no business logic |
+| `internal/proxy/retry.go` | **Modified** | Extracted from proxy.go; retry + isRetryable |
+| `internal/proxy/balancer.go` | **Modified** | Moved from upstream.go; LoadBalancer + SharedUpstreams |
+| `internal/proxy/middleware/auth.go` | **NEW** | ~30 lines; extracted from proxy.go + admin.go |
+| `internal/proxy/middleware/logging.go` | **NEW** | ~40 lines; publishes RequestLogEvent |
+| `internal/proxy/middleware/requestid.go` | **NEW** | ~15 lines; extracted from proxy.go |
+| `internal/proxy/middleware/modelrewrite.go` | **NEW** | ~30 lines; extracted from proxy.go |
+| `internal/tui/app.go` | **Modified** | Root model; delegates to components (~150 lines) |
+| `internal/tui/components/nav.go` | **NEW** | ~60 lines; extracted from tui.go renderNavigation |
+| `internal/tui/components/upstream_list.go` | **NEW** | ~80 lines; extracted from tui.go renderUpstreamList |
+| `internal/tui/components/form.go` | **NEW** | ~120 lines; extracted from tui.go form handling |
+| `internal/tui/components/model_select.go` | **NEW** | ~60 lines; extracted from tui.go model select |
+| `internal/tui/components/confirm.go` | **NEW** | ~40 lines; extracted from tui.go confirm dialog |
+| `internal/tui/components/status.go` | **NEW** | ~60 lines; extracted from tui.go renderStatus |
+| `internal/tui/styles/theme.go` | **NEW** | ~100 lines; extracted from tui.go style declarations |
+| `internal/config/config.go` | **Modified** | Moved from config.go; same logic, new package |
+| `internal/storage/sqlite.go` | **Modified** | Moved from usage.go; initDB |
+| `internal/storage/usage.go` | **Modified** | Moved from usage.go; worker + stats |
+| `internal/upstream/upstream.go` | **Modified** | Consolidated types from config.go + upstream.go |
 
 ### Internal Boundaries
 
 | Boundary | Communication | Notes |
 |----------|---------------|-------|
-| HTTP Handler ↔ Router | Direct function call | Context propagation critical |
-| Router ↔ Provider | Interface method | Easy to mock for testing |
-| Provider ↔ SQLite | database/sql with goroutine | Non-blocking writes |
-| HTTP Server ↔ TUI | Channels | Buffered channels prevent deadlock |
+| TUI <-> Business Logic | EventBus (publish events) | TUI never imports proxy, config, or storage packages |
+| Proxy <-> Storage | EventBus (RequestLogEvent) | Proxy publishes, storage subscribes |
+| Proxy <-> Config | EventBus (ConfigReloadedEvent) | Config publishes, proxy subscribes |
+| TUI <-> Config | EventBus (various upstream events) | TUI publishes, config subscribes |
+| Middleware -> Proxy | Direct function call | Middleware wraps handler, same package |
+
+### Dependency Direction (Enforced by Go Compiler)
+
+```
+cmd/agent-router
+  imports: internal/eventbus, internal/proxy, internal/tui, internal/config, internal/storage
+
+internal/eventbus
+  imports: (nothing -- standalone)
+
+internal/proxy
+  imports: internal/eventbus, internal/upstream, internal/config
+
+internal/tui
+  imports: internal/eventbus, internal/upstream
+  DOES NOT import: internal/proxy, internal/config, internal/storage
+
+internal/config
+  imports: internal/upstream
+
+internal/storage
+  imports: (nothing -- receives events only)
+
+internal/upstream
+  imports: (nothing -- pure types)
+```
+
+**Key constraint:** `internal/tui` and `internal/proxy` NEVER import each other. They communicate exclusively through the EventBus. This is the primary architectural win.
+
+## Build Order
+
+The refactor must proceed in dependency order. Each phase produces a working build.
+
+### Phase 1: Extract Types (Zero Behavior Change)
+
+1. Create `internal/upstream/upstream.go` -- move `Upstream`, `UpstreamConfig` types
+2. Create `internal/config/config.go` -- move `Config`, `ServiceConfig`, `LoadConfig`, `SaveConfig`
+3. Create `internal/storage/sqlite.go` + `usage.go` -- move `UsageLog`, `UsageStats`, `initDB`, `StartUsageWorker`
+4. Verify: `go build ./...` passes with re-exported types from main package
+
+**Why first:** Types have zero dependencies. Moving them is mechanical and proves the `internal/` structure compiles.
+
+### Phase 2: Extract Proxy Layer (Middleware Chain)
+
+1. Create `internal/proxy/middleware/` -- extract auth, logging, requestid, modelrewrite
+2. Create `internal/proxy/retry.go` -- extract retry loop + isRetryable
+3. Create `internal/proxy/balancer.go` -- move LoadBalancer + SharedUpstreams
+4. Create `internal/proxy/handler.go` -- route assembly with middleware chain
+5. Verify: HTTP proxy still works identically, all tests pass
+
+**Why second:** Proxy has no dependency on TUI. Can be refactored and tested in isolation.
+
+### Phase 3: Introduce EventBus
+
+1. Create `internal/eventbus/bus.go` -- typed channel pub/sub
+2. Replace direct channels (logChan, usageChan) with EventBus subscriptions
+3. Replace TUI callbacks (OnUpstreamAdded, etc.) with EventBus.Publish calls
+4. Replace admin.go global state access with EventBus subscribers
+5. Verify: All cross-component communication works through events
+
+**Why third:** EventBus requires proxy and storage to be in their own packages first. After this phase, main.go shrinks dramatically.
+
+### Phase 4: TUI Componentization
+
+1. Create `internal/tui/styles/theme.go` -- extract all lipgloss styles
+2. Create `internal/tui/components/` -- extract each visual component
+3. Create `internal/tui/app.go` -- root model with message routing
+4. Remove old `tui.go`
+5. Verify: TUI renders identically, all keyboard interactions work
+
+**Why last:** TUI componentization depends on EventBus being in place (components publish events instead of calling callbacks). Can be done incrementally -- one component at a time.
+
+## Scaling Considerations
+
+This is a local tool with a single user. Scaling is not a concern. The architecture is designed for maintainability and extensibility, not throughput.
+
+| Concern | Approach |
+|---------|----------|
+| Concurrent requests | Already handled: async channels, WAL SQLite |
+| TUI responsiveness | Buffered EventBus channels with non-blocking sends |
+| Config hot reload | EventBus lets any subscriber react to ConfigReloadedEvent |
+| New upstream providers | Add to config; no code changes needed |
+
+## Anti-Patterns
+
+### Anti-Pattern 1: Over-Abstracting the EventBus
+
+**What people do:** Build a generic event bus with string topics, wildcard matching, and async processing pipelines.
+
+**Why it is wrong:** This project has ~8 event types. A generic framework adds complexity with zero benefit.
+
+**Do this instead:** Use typed Go structs as events. Use a simple map of `reflect.Type` to `[]chan Event`. Under 100 lines of code.
+
+### Anti-Pattern 2: Deep Directory Nesting
+
+**What people do:** Create `internal/proxy/middleware/auth/v1/`, `internal/tui/components/forms/upstream/`, etc.
+
+**Why it is wrong:** At ~1890 LOC total, deeply nested directories signal over-engineering. Each directory adds import ceremony.
+
+**Do this instead:** One level of nesting under `internal/`. Sub-packages only where there is a clear boundary (middleware/, components/). Flatten aggressively.
+
+### Anti-Pattern 3: Component Communication via Shared Mutable State
+
+**What people do:** Pass a pointer to a shared `App` struct that every component can read and mutate.
+
+**Why it is wrong:** Recreates the global state problem. Any component can corrupt any other component's state.
+
+**Do this instead:** Components receive data through constructor injection and communicate state changes through the EventBus. Read-only shared data (upstream list) is passed by copy.
+
+### Anti-Pattern 4: Premature cmd/ Split for a Single Binary
+
+**What people do:** Create `cmd/proxy/main.go`, `cmd/admin/main.go`, `cmd/tui/main.go` as separate binaries.
+
+**Why it is wrong:** The TUI IS the primary interface -- there is no use case for running the proxy without the TUI. Multiple binaries add build complexity for no operational benefit.
+
+**Do this instead:** Single `cmd/agent-router/main.go`. Admin API is an HTTP route, not a separate binary.
 
 ## Sources
 
-- [net/http package documentation](https://pkg.go.dev/net/http) (HIGH)
-- [Effective Go - Concurrency](https://go.dev/doc/effective_go#concurrency) (HIGH)
-- [context package patterns](https://pkg.go.dev/context) (HIGH)
-- [database/sql connection pooling](https://pkg.go.dev/database/sql) (HIGH)
-- [bubbletea TUI framework](https://github.com/charmbracelet/bubbletea) (MEDIUM)
-- [go-sqlite3 driver](https://github.com/mattn/go-sqlite3) (MEDIUM)
+- [Organizing a Go Module -- go.dev official](https://go.dev/doc/modules/layout) (HIGH confidence)
+- [Managing Nested Models with Bubble Tea -- Roman Parykin](https://donderom.com/posts/managing-nested-models-with-bubble-tea/) (HIGH confidence -- TUI componentization)
+- [Understanding Go Middleware Through net/http](https://beyondthecode.medium.com/understanding-go-middleware-through-net-http-f59c823395fe) (HIGH confidence -- onion model)
+- [Monoliths That Scale: Command and Event Buses](https://dev.to/er1cak/monoliths-that-scale-architecting-with-command-and-event-buses-2mp) (MEDIUM confidence -- event bus pattern)
+- [Channel vs Callbacks -- r/golang](https://www.reddit.com/r/golang/comments/1rnk5tl/channel_vs_callbacks/) (MEDIUM confidence -- Go community consensus)
+- [justinas/alice -- Middleware chaining](https://github.com/justinas/alice) (HIGH confidence -- reference implementation)
+- [charmbracelet/bubbles -- TUI component library](https://github.com/charmbracelet/bubbles) (HIGH confidence -- componentization reference)
 
 ---
-*Architecture research for: Go API Proxy Service*
-*Researched: 2026-04-03*
+*Architecture research for: Agent Router v2.0 Modular Refactor*
+*Researched: 2026-04-05*

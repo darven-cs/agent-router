@@ -1,151 +1,168 @@
 # Project Research Summary
 
-**Project:** Go Local API Proxy/Router
-**Domain:** Local Claude API Router/Proxy Service
-**Researched:** 2026-04-03
-**Confidence:** MEDIUM
+**Project:** Agent Router v2.0 Architecture Refactor
+**Domain:** Go local API proxy -- internal architecture modernization
+**Researched:** 2026-04-05
+**Confidence:** HIGH
 
 ## Executive Summary
 
-This project is a local API proxy that routes LLM requests to multiple upstream providers (Anthropic, OpenAI, OpenRouter) while presenting an OpenAI-compatible interface. Experts build such proxies using Go's native net/http as the foundation, layering GORM + SQLite for usage tracking, and charmbracelet/bubbletea for the terminal dashboard. The recommended approach prioritizes a minimal MVP with the OpenAI-compatible endpoint and single upstream passthrough, then layers on load balancing, failover, and the TUI dashboard in subsequent phases.
+Agent Router is a local Go API proxy that forwards Claude Code requests to multiple upstream providers (Zhipu, Aicodee, Minimax) with load balancing and failover. The v1.0 MVP is delivered and working: a 7-file flat `package main` codebase at ~1890 LOC. The v2.0 milestone is an architecture refactor that modernizes this flat monolith into a standard Go `cmd/internal` layout with an event bus, middleware chain, and decomposed TUI -- without adding any third-party dependencies.
 
-The key risks are concurrency-related: unbounded goroutines under load, race conditions on config reloads, and SQLite write contention blocking HTTP handlers. These must be addressed in Phase 2 before any load testing. The TUI and HTTP server must run in separate goroutines from the start to avoid blocking. Research confidence is MEDIUM overall due to training data reliance and unverified version numbers.
+Research confirms a clear 4-phase migration path, each phase producing a working build. The critical insight is that phase ordering is constrained by hard dependencies: project layout restructuring must come first because every other feature requires `internal/` directory boundaries to exist. The event bus and middleware chain are independent of each other but both require the new layout. TUI componentization should come last because it benefits from the event bus replacing callbacks first. The recommended stack adds zero new dependencies -- all new capabilities (event bus, middleware chain, TUI decomposition) are implemented with Go stdlib primitives and the existing bubbletea library.
+
+The primary risk is import cycles during the initial restructuring. The codebase has 7 global variables and freely shared types across all files. Creating `internal/` packages without careful dependency planning will produce `import cycle not allowed` errors. Prevention requires creating a dependency-free shared types package first, then splitting files one at a time with compilation verification after each move.
 
 ## Key Findings
 
 ### Recommended Stack
 
-**From STACK.md (Confidence: MEDIUM)**
+The v2.0 refactor adds zero new third-party dependencies. All new capabilities use Go stdlib primitives (`sync.RWMutex`, `chan Event`, `context.Context`, `func(http.Handler) http.Handler`) and the existing bubbletea v1.3.10 library. This is a deliberate choice aligned with the project constraint of "Go native + minimal third-party libs."
 
-Go's standard library plus three key ecosystem libraries form the core stack. The native `net/http` package handles HTTP server and client duties with zero dependencies. GORM v1.25.x with the official SQLite driver provides usage tracking without external database requirements. The charmbracelet stack (bubbletea v1.x + lipgloss v2.x) creates the terminal dashboard with an Elm-like declarative architecture.
+**Core technologies (unchanged from v1.0):**
+- Go 1.24.0 + net/http stdlib: HTTP server and client -- production-proven, zero dependencies
+- bubbletea v1.3.10 + lipgloss v1.1.0: TUI framework -- Elm architecture with nested model composition
+- GORM v1.31.1 + sqlite driver v1.6.0: Usage tracking storage -- already validated in v1.0
+- gopkg.in/yaml.v3: Config file parsing -- stable, pure Go
 
-**Core technologies:**
-- **Go native net/http 1.21+**: HTTP server and client — zero dependencies, production-proven
-- **GORM v1.25.x + gorm.io/driver/sqlite**: ORM for SQLite usage tracking — standard Go ORM with excellent SQLite support
-- **charmbracelet/bubbletea v1.x**: TUI framework — declarative Elm-like architecture
-- **charmbracelet/lipgloss v2.x**: TUI styling — composable styles with 256-color support
-- **gopkg.in/yaml.v3 + fsnotify**: Config management and hot reload — standard Go YAML parsing with file watching
+**New capabilities (stdlib only):**
+- Event Bus: `sync.RWMutex` + `map[reflect.Type][]chan Event` -- replaces 6 hardcoded callbacks in main.go
+- Middleware Chain: `func(http.Handler) http.Handler` composition -- extracts 5 concerns from monolithic ProxyHandler.ServeHTTP
+- TUI Decomposition: bubbletea nested model pattern -- splits 837-line tui.go into 6 child components
+
+**Explicitly excluded:** justinas/alice (saves 10 lines, contradicts minimal deps), asaskevich/EventBus (reflection-based, overkill), bubblon (model stack pattern, wrong fit for single-screen layout), charmbracelet/bubbles (opinionated styling conflicts with Catppuccin palette).
 
 ### Expected Features
 
-**From FEATURES.md (Confidence: LOW — web tools unavailable)**
-
-Users expect these table stakes features: OpenAI-compatible `/v1/chat/completions` endpoint, single upstream proxy passthrough, API key validation, basic request logging, upstream health checks, and static YAML configuration. Without these, the product feels incomplete.
-
 **Must have (table stakes):**
-- OpenAI-compatible `/v1/chat/completions` endpoint — existing code expects this API shape
-- Single upstream proxy passthrough — core value proposition
-- API key passthrough — security baseline, don't break existing auth
-- Basic logging to stdout — debuggability
-- Static YAML configuration — standard local-tool expectation
+- ARCH-01: Standard Go Project Layout -- flat 7-file `package main` with 7 global variables is unmaintainable beyond ~2000 LOC. Creates `cmd/agent-router/` + `internal/{config,proxy,tui,eventbus,upstream,storage}/` structure
+- Global State -> App Struct -- consolidate 9 global variables into explicit dependency injection via constructors. Required by ARCH-01
+- TUI-01: handleModelSelect bug fix -- model selection via `[m]` key does not propagate to proxy handler's model routing. Must fix before componentization
 
-**Should have (competitive differentiators):**
-- Real-time TUI dashboard — visual feedback distinguishes CLI tools from services
-- Automatic failover with health checks — resilience without user intervention
-- Round-robin load balancing — spread traffic across providers
-- Cost tracking per upstream — budget visibility
+**Should have (architectural quality):**
+- ARCH-02: Go Channel Event Bus -- replaces 6 hardcoded TUI callbacks with typed pub/sub. New subscribers plug in without touching existing code
+- TUI-02: TUI Componentization -- splits 837-line tui.go into 6 child models using bubbletea's nested model pattern
+- CONF-01/02/03: Config Hot Reload -- trivial with event bus; SIGHUP, TUI button, and POST /admin/reload all publish the same event
 
-**Defer (v2+):**
-- Dynamic config reload — complex with concurrent requests, risky
-- Per-model routing — provider support matrix adds complexity
-- Rate limiting per consumer — multi-tenant complexity
-- Streaming support — SSE/chunked responses, stateful
+**Defer (v2.1+):**
+- ARCH-03: Onion Middleware Chain -- high complexity, decomposes ServeHTTP into composable middleware layers. Highest risk, should come last
+- ADMIN-01/02: Admin API Routes -- already functional, middleware just removes auth duplication
+- Streaming proxy support, circuit breaker per upstream, Prometheus metrics -- architecture enables these but they are not in scope
 
 ### Architecture Approach
 
-**From ARCHITECTURE.md (Confidence: HIGH)**
-
-The architecture follows a layered pattern: HTTP Server and TUI run concurrently, passing state through channels to a shared middleware chain and router core. The router core contains the load balancer, provider manager, and retry logic. SQLite handles async, non-blocking usage tracking via a background goroutine.
+The target architecture follows a standard Go modular monolith pattern. A thin `cmd/agent-router/main.go` wires an `App` struct with explicit dependency injection. The `internal/eventbus/` package provides typed channel pub/sub that decouples all subsystems: TUI never imports proxy, proxy never imports TUI. The `internal/proxy/middleware/` package extracts cross-cutting HTTP concerns (auth, logging, request ID, model rewrite) into composable `func(http.Handler) http.Handler` decorators. The `internal/tui/` package decomposes the monolithic TUI into a root model that delegates `Update()` and `View()` to child components following bubbletea's Elm architecture.
 
 **Major components:**
-1. **HTTP Server (net/http)**: Accepts requests, applies middleware, routes to handlers
-2. **TUI Renderer (bubbletea)**: Displays dashboard, logs, provider status in terminal
-3. **Middleware Chain**: Auth, logging, rate-limiting as composable http.Handler decorators
-4. **Router Core**: Load balancing + retry logic with provider health tracking
-5. **SQLite Tracker**: Async usage recording with WAL mode for concurrency
+1. `internal/eventbus/` -- Typed pub/sub via Go channels. Replaces direct callbacks. Events are typed Go structs (UpstreamAddedEvent, ConfigReloadedEvent, RequestLogEvent). Subscribers receive events through buffered channels with non-blocking sends
+2. `internal/proxy/middleware/` -- Composable HTTP middleware chain. Auth, logging, request ID, and model rewrite each become standalone testable handlers. Chain built by reverse iteration of `func(http.Handler) http.Handler`
+3. `internal/tui/components/` -- Six child bubbletea models (nav, upstream_list, form, model_select, confirm, status). Root `app.go` routes messages to active component. All models use value receivers
+4. `internal/config/`, `internal/storage/`, `internal/upstream/` -- Pure data and utility packages extracted from existing code. No cross-imports between them
 
-Key patterns: Middleware Chain (decorator pattern), Provider Pool with Health Checks, Retry with Exponential Backoff + jitter, Concurrent TUI and HTTP via channels, SQLite WAL mode for non-blocking writes.
+**Key architectural constraint:** `internal/tui` and `internal/proxy` NEVER import each other. They communicate exclusively through the EventBus. This is the primary architectural win of the refactor.
 
 ### Critical Pitfalls
 
-**From PITFALLS.md (Confidence: MEDIUM)**
+1. **Import cycle during restructuring (Pitfall 5)** -- All types currently share `package main` with no boundaries. Creating `internal/` packages without a dependency-free shared types package will immediately produce `import cycle not allowed`. Prevention: create `internal/upstream/` with zero imports first, then split files one at a time with `go build ./...` after each move.
 
-1. **HTTP Response Body Not Drained**: Every upstream response body must be fully consumed and closed. Undrained bodies cause connection exhaustion and "too many open files" errors.
-2. **Race Condition on Config Reload**: Go maps are not goroutine-safe. Config reads during active requests concurrent with reloads cause panics. Use `sync.RWMutex` or `atomic.Value`.
-3. **Unbounded Goroutine Spawning**: Without semaphore limits, concurrent requests spawn unlimited goroutines for upstream calls. Use context cancellation and worker pools.
-4. **SQLite Writes Blocking HTTP Handlers**: SQLite serializes writes. Synchronous writes block HTTP responses. Queue writes to a goroutine channel.
-5. **TUI Blocking HTTP Event Loop**: TUI rendering on the main thread blocks HTTP handling. Run HTTP server in a separate goroutine.
+2. **Global state survives the move (Pitfall 6)** -- Moving `var db *gorm.DB` from main.go to `internal/usage/db.go` is not restructuring, it is relocating global state. Prevention: every package receives dependencies through constructor functions. `main()` is the ONLY place that wires dependencies. Verify with `grep -r "^var " internal/` returning zero mutable globals.
+
+3. **Event bus goroutine leaks (Pitfall 1)** -- Every subscriber goroutine leaks if channels are never closed or stop signals are missing. The current codebase already has a latent version of this with `logChan`. Prevention: `context.WithCancel` for every subscriber, `sync.WaitGroup` for tracking, `Close()` method with `closed bool` flag.
+
+4. **Send on closed channel panic during shutdown (Pitfall 2)** -- If Publish() runs concurrently with bus shutdown, the process panics. Go provides no `isClosed()` for channels. Prevention: `sync.RWMutex` + `closed bool` guard in `Publish()`. Never close subscriber channels from publisher side.
+
+5. **Middleware chain breaks on missing next.ServeHTTP() (Pitfall 3)** -- Converting ServeHTTP early returns into middleware without calling `next` silently drops requests. Prevention: strict contract -- each middleware EITHER calls next OR writes complete response, never both. Chain execution test before individual middleware implementation.
 
 ## Implications for Roadmap
 
 Based on research, suggested phase structure:
 
-### Phase 1: Foundation — HTTP Server + TUI + Single Provider
-**Rationale:** Core functionality must exist before adding complexity. TUI and HTTP must run concurrently from the start to avoid architectural rework.
-**Delivers:** Working HTTP server with OpenAI-compatible endpoint, single upstream passthrough, API key passthrough, basic logging, static YAML config, manual failover via restart, TUI dashboard showing provider status.
-**Addresses:** Table stakes features from FEATURES.md
-**Avoids:** Pitfall #5 (TUI blocking HTTP) — HTTP and TUI run in separate goroutines from start
+### Phase 1: Foundation (ARCH-01 + Global State + TUI-01)
 
-### Phase 2: Resilience — Connection Pooling + Failover + Health Checks
-**Rationale:** Load testing will expose concurrency issues. Connection pooling and goroutine limits are foundational before testing at scale. Health checks enable automatic failover.
-**Delivers:** Tuned HTTP transport with proper idle connection limits, request timeouts on all upstream calls, health check system, automatic failover with retry logic, bounded goroutine spawning via semaphore, composite error logging with upstream details.
-**Addresses:** Differentiators — automatic failover, retry with backoff, load balancing readiness
-**Avoids:** Pitfalls #1 (response body draining), #3 (unbounded goroutines), #6 (connection pool misconfig), #7 (no timeout), #8 (silent error swallowing), #9 (hash collision at startup)
+**Rationale:** Every subsequent feature depends on `internal/` directory boundaries and explicit dependency injection. Must come first.
+**Delivers:** Standard Go project layout with `cmd/agent-router/main.go` entry point and `internal/{config,proxy,tui,upstream,storage}/` packages. All 9 global variables consolidated into constructor-injected dependencies. Model select bug fixed.
+**Addresses:** ARCH-01, Global State -> App Struct, TUI-01
+**Avoids:** Import cycles (Pitfall 5), lingering global state (Pitfall 6), build path breakage (Pitfall 11)
+**Key verification:** `go build -o agent-router ./cmd/agent-router && ./agent-router` starts correctly and finds config.yaml
 
-### Phase 3: Persistence + Polish — SQLite + Graceful Shutdown + Config Hot Reload
-**Rationale:** SQLite integration requires careful async design. Graceful shutdown must be tested before production. Hot reload requires config race condition fixes.
-**Delivers:** SQLite usage tracking with WAL mode and async writes, graceful shutdown with in-flight request draining, dynamic config reload with goroutine-safe access, TUI updates via channels (not polling).
-**Avoids:** Pitfalls #2 (config race), #4 (SQLite blocking), #10 (missing graceful shutdown)
+### Phase 2: Decoupling (ARCH-02: Event Bus + Config Hot Reload)
+
+**Rationale:** Event bus is the highest-value architectural improvement -- it decouples TUI from backend and enables all future features to plug in independently. Can be done in parallel with Phase 3 since it touches different files.
+**Delivers:** `internal/eventbus/` package with typed channel pub/sub. 6 TUI callbacks replaced with event subscriptions. Config hot reload via events. Main.go shrinks from ~270 lines to ~80 lines.
+**Addresses:** ARCH-02, CONF-01/02/03
+**Avoids:** Goroutine leaks (Pitfall 1), send on closed channel (Pitfall 2), event ordering bugs (Pitfall 9), duplicate callback+event (Pitfall 10)
+**Key verification:** `go test -race` passes, `runtime.NumGoroutine()` stable after config reload
+
+### Phase 3: Request Pipeline (ARCH-03: Middleware Chain + Admin Routes)
+
+**Rationale:** Middleware chain is the highest-complexity feature and must not break proxy behavior. It is independent of the event bus (different coupling axis -- horizontal request processing vs vertical component communication). Should come after event bus to avoid compounding risk.
+**Delivers:** `internal/proxy/middleware/` package with composable HTTP handlers. Auth duplication eliminated. Request processing becomes independently testable per concern.
+**Addresses:** ARCH-03, ADMIN-01/02
+**Avoids:** Missing next.ServeHTTP() (Pitfall 3), wrong middleware order (Pitfall 4), retry re-executing auth (integration gotcha)
+**Key verification:** Golden-file test capturing current proxy request/response pairs, verify identical behavior
+
+### Phase 4: TUI Decomposition (TUI-02)
+
+**Rationale:** Should come last because it benefits from event bus replacing callbacks first. Without the event bus, decomposed TUI components would still need callback references to the backend. With the event bus, components publish events and are fully decoupled.
+**Delivers:** 6 child bubbletea models replacing 837-line tui.go. Root `app.go` routes messages to active component. Each component owns its own state.
+**Addresses:** TUI-02
+**Avoids:** Value receiver violations (Pitfall 7), WindowSizeMsg not forwarded (Pitfall 8)
+**Key verification:** Terminal resize to 40x10 produces correct layout, all keyboard interactions work identically
 
 ### Phase Ordering Rationale
 
-- **Phase 1 before 2**: TUI architecture must be correct from start. Foundation features (endpoint, passthrough, config) are prerequisites for failover testing.
-- **Phase 2 before 3**: Concurrency fixes must be in place before integrating SQLite. Load testing Phase 2 reveals whether goroutine limits and connection pooling work.
-- **Load Balancing deferred**: Round-robin is listed as v1.x feature but should come in Phase 2 after health checks. Cannot balance intelligently without knowing provider health.
+- Phase 1 is a hard prerequisite: every `internal/` package needs the directory structure to exist. Without it, no other package can be cleanly separated.
+- Phases 2 and 3 are independent of each other (event bus addresses vertical decoupling, middleware addresses horizontal request processing) but both depend on Phase 1.
+- Phase 4 depends on Phase 2: TUI components should publish events rather than holding callback references. Componentization without the event bus would propagate the callback coupling into child models.
+- Phase 3 is placed before Phase 4 because middleware chain risk should be isolated and verified before the large TUI refactor.
 
 ### Research Flags
 
 Phases likely needing deeper research during planning:
-- **Phase 2 (Failover/Retry)**: Retry logic edge cases — need to verify backoff behavior under various failure modes, test against actual provider rate limits
-- **Phase 3 (SQLite)**: WAL mode tuning for write-heavy workloads — may need benchmarking to determine optimal batch sizes
+- **Phase 3 (Middleware Chain):** Complex integration -- must verify that retry logic does not re-execute auth, and that admin routes integrate correctly with the middleware chain. Golden-file testing approach needs definition.
+- **Phase 4 (TUI Decomposition):** bubbletea nested model message routing has subtle gotchas (value receivers, WindowSizeMsg forwarding). While patterns are documented, the specific decomposition of this 837-line model needs careful planning.
 
 Phases with standard patterns (skip research-phase):
-- **Phase 1 (Foundation)**: HTTP server patterns well-documented in Go standard library
-- **Phase 1 (TUI)**: Bubbletea patterns well-documented in Charmbracelet docs
+- **Phase 1 (Project Layout):** Well-documented Go convention. Mechanical file moves with compilation verification.
+- **Phase 2 (Event Bus):** Go channel pub/sub is a well-established pattern. Implementation details (lifecycle, ordering) are covered in pitfalls research.
 
 ## Confidence Assessment
 
 | Area | Confidence | Notes |
 |------|------------|-------|
-| Stack | MEDIUM | Training data; verify versions via `go list -m -versions` before implementation |
-| Features | LOW | Web search unavailable; based on training data analysis of competitors |
-| Architecture | HIGH | Go standard library patterns well-documented; community consensus |
-| Pitfalls | MEDIUM | Go best practices documented; specific error patterns from community post-mortems |
+| Stack | HIGH | All versions verified from go.mod. Zero new dependencies confirmed. All "what not to use" decisions have clear rationale. |
+| Features | HIGH | Feature list is codebase-derived, not aspirational. Every feature maps to specific lines in existing files. Dependencies between features are explicit. |
+| Architecture | HIGH | Target architecture follows standard Go patterns (cmd/internal layout, middleware chain, event bus). Component boundaries and dependency directions are explicit and compiler-enforced. |
+| Pitfalls | HIGH | 11 pitfalls identified from codebase analysis and Go community patterns. Each has specific warning signs and verification steps. Pitfall-to-phase mapping is complete. |
 
-**Overall confidence:** MEDIUM
+**Overall confidence:** HIGH
 
 ### Gaps to Address
 
-- **Stack versions**: Recommend running `go list -m -versions` for all dependencies before implementation to verify version compatibility
-- **Feature competitive analysis**: Unable to verify via web search. Recommend direct analysis of LiteLLM, LocalAI, and PortKey documentation before roadmap finalization
-- **Provider API specifics**: Request/response transformation requirements for each upstream provider need live testing to confirm
-- **Streaming support**: Researched as v2 feature but actual implementation complexity unknown without testing against real provider streaming responses
+- **Event ordering semantics:** Research recommends synchronous dispatch for CRUD operations but does not fully specify which events must be ordered. During Phase 2 planning, define a complete ordered vs unordered event taxonomy.
+- **Migration granularity for callbacks:** Research recommends migrating one callback at a time but the specific migration order matters (e.g., OnReload should migrate first since it is simplest). Define during Phase 2 planning.
+- **Test infrastructure:** Current codebase has no automated tests. Each phase should establish testing patterns for its domain. Phase 1 should include a basic test framework setup.
+- **Bubbletea version compatibility for nested models:** Research assumes bubbletea v1.3.10 supports the nested model pattern correctly. Verify with a small spike during Phase 4 planning if any API uncertainty arises.
 
 ## Sources
 
 ### Primary (HIGH confidence)
-- Go standard library documentation (net/http, context, database/sql) — official, verified
-- Effective Go concurrency patterns — official Go documentation
-- GORM documentation (gorm.io) — established documentation
+- go.dev official documentation -- Go module layout (`cmd/internal` conventions), net/http middleware patterns
+- charmbracelet/bubbletea GitHub -- nested model composition patterns, Elm architecture
+- Existing codebase analysis -- all 7 Go source files read and analyzed (main.go 272 LOC, proxy.go 334 LOC, tui.go 837 LOC, upstream.go 158 LOC, config.go 67 LOC, usage.go 78 LOC, admin.go 144 LOC)
+- go.mod dependency verification -- actual versions confirmed (Go 1.24.0, bubbletea v1.3.10, lipgloss v1.1.0, GORM v1.31.1)
+- justinas/alice GitHub -- reference implementation for middleware chaining
 
 ### Secondary (MEDIUM confidence)
-- STACK.md — Training data analysis, recommended versions should be verified
-- ARCHITECTURE.md — Go community consensus on patterns, bubbletea internals MEDIUM confidence
-- PITFALLS.md — Community post-mortems, standard library patterns, some inference
+- Alex Edwards "Making and Using HTTP Middleware" -- Chain() pattern
+- Roman Parykin "Managing Nested Models with Bubble Tea" -- TUI componentization pattern
+- Go community sources (r/golang, go101.org) -- channel closing principles, goroutine leak prevention
+- golang-standards/project-layout -- community reference for directory conventions
 
 ### Tertiary (LOW confidence)
-- FEATURES.md — Web tools unavailable during research; competitive analysis based on training data; needs live verification
+- Blog posts on middleware gotchas -- missing next.ServeHTTP() patterns
+- Community event bus patterns for Go -- typed channel pub/sub variations
 
 ---
-*Research completed: 2026-04-03*
+*Research completed: 2026-04-05*
 *Ready for roadmap: yes*
