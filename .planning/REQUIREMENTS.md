@@ -9,8 +9,8 @@ Requirements for Architecture Refactor milestone. Each maps to roadmap phases.
 
 ### Architecture
 
-- [ ] **ARCH-01**: Developer can find code organized by domain in cmd/ and internal/ directories (Standard Go Project Layout)
-- [ ] **ARCH-02**: App struct replaces all 7 global variables, each package receives dependencies through constructors
+- [x] **ARCH-01**: Developer can find code organized by domain in cmd/ and internal/ directories (Standard Go Project Layout)
+- [x] **ARCH-02**: App struct replaces all 7 global variables, each package receives dependencies through constructors
 - [ ] **ARCH-03**: TUI publishes events to EventBus instead of calling business logic directly (6 callbacks replaced)
 - [ ] **ARCH-04**: New subscribers (admin API, metrics) can plug into events without touching existing code
 - [ ] **ARCH-05**: Proxy request processing is composed from independent middleware layers (auth, logging, recovery, request-id, transform)
@@ -18,7 +18,7 @@ Requirements for Architecture Refactor milestone. Each maps to roadmap phases.
 
 ### TUI
 
-- [ ] **TUI-01**: User can select upstream model via [m] key and proxy immediately uses that model for routing
+- [x] **TUI-01**: User can select upstream model via [m] key and proxy immediately uses that model for routing
 - [ ] **TUI-02**: Developer can modify one TUI component (nav, list, form, model-select, confirm, status) without touching others
 - [ ] **TUI-03**: Each TUI child model encapsulates its own state, update logic, and rendering independently
 - [ ] **TUI-04**: Parent app.go routes messages to correct child model based on current visual mode
@@ -65,13 +65,13 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| ARCH-01 | Phase 4 | Pending |
-| ARCH-02 | Phase 4 | Pending |
+| ARCH-01 | Phase 4 | Complete |
+| ARCH-02 | Phase 4 | Complete |
 | ARCH-03 | Phase 5 | Pending |
 | ARCH-04 | Phase 5 | Pending |
 | ARCH-05 | Phase 6 | Pending |
 | ARCH-06 | Phase 6 | Pending |
-| TUI-01 | Phase 4 | Pending |
+| TUI-01 | Phase 4 | Complete |
 | TUI-02 | Phase 5 | Pending |
 | TUI-03 | Phase 5 | Pending |
 | TUI-04 | Phase 5 | Pending |

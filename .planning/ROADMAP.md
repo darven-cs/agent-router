@@ -34,7 +34,7 @@
 **Plans**: 3 plans
 
 Plans:
-- [ ] 04-01: Leaf package migration (config, upstream, storage) + primary upstream extension
+- [x] 04-01: Leaf package migration (config, upstream, storage) + primary upstream extension
 - [ ] 04-02: Proxy/admin migration + App struct replacing all globals
 - [ ] 04-03: TUI split + primary upstream feature + final cmd/ layout + human verify
 

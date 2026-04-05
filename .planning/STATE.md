@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Architecture Refactor
 status: planning
-stopped_at: Phase 4 context gathered
-last_updated: "2026-04-05T04:25:28.651Z"
+stopped_at: Completed 04-01-PLAN.md
+last_updated: "2026-04-05T05:45:26.098Z"
 last_activity: 2026-04-05 — v2.0 roadmap created (Phases 4-6)
 progress:
   total_phases: 3
   completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
+  total_plans: 3
+  completed_plans: 1
   percent: 0
 ---
 
@@ -63,6 +63,7 @@ Archived to: .planning/milestones/v1.0-ROADMAP.md, v1.0-REQUIREMENTS.md
 | 1. Foundation (v1.0) | 1 | 1 |
 | 2. Resilience (v1.0) | 2 | 2 |
 | 3. Persistence (v1.0) | 4 | 4 |
+| Phase 04 P01 | 7min | 3 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -73,6 +74,9 @@ Recent decisions affecting current work:
 
 - [Roadmap]: Coarse granularity → compress research's 4 phases into 3 (merge Event Bus + TUI Decomp into one phase)
 - [Roadmap]: Phase 5 and Phase 6 are independent after Phase 4 (event bus = vertical decoupling, middleware = horizontal request pipeline)
+- [Phase 04]: LoadBalancer 改为指针类型以容纳 sync.RWMutex (primary upstream 支持)
+- [Phase 04]: Type alias wrapper 模式用于增量迁移期间保持编译兼容
+- [Phase 04]: UsageStats 封装 Record/GetCounts 方法解决跨包私有字段访问
 
 ### Pending Todos
 
@@ -85,6 +89,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-04-05T04:25:28.636Z
-Stopped at: Phase 4 context gathered
-Resume file: .planning/phases/04-foundation-restructure/04-CONTEXT.md
+Last session: 2026-04-05T05:45:26.092Z
+Stopped at: Completed 04-01-PLAN.md
+Resume file: None
