@@ -19,7 +19,7 @@ var (
 	usageChan       chan RequestLog
 	execPath        string
 	sharedUpstreams *SharedUpstreams
-	lb              LoadBalancer
+	lb              *LoadBalancer
 	proxyHandler    *ProxyHandler
 	cfg             *Config
 	startTime       = time.Now()

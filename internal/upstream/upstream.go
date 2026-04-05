@@ -27,7 +27,7 @@ type LoadBalancer struct {
 }
 
 // NewLoadBalancer creates a load balancer from upstream configurations
-func NewLoadBalancer(configs []config.UpstreamConfig) LoadBalancer {
+func NewLoadBalancer(configs []config.UpstreamConfig) *LoadBalancer {
 	var upstreams []*Upstream
 	for _, cfg := range configs {
 		if !cfg.Enabled {
@@ -43,11 +43,11 @@ func NewLoadBalancer(configs []config.UpstreamConfig) LoadBalancer {
 			Model:    cfg.Model,
 		})
 	}
-	return LoadBalancer{upstreams: upstreams}
+	return &LoadBalancer{upstreams: upstreams}
 }
 
 // Select chooses an upstream using FNV-1a hash modulo
-func (lb LoadBalancer) Select(hashInput string) *Upstream {
+func (lb *LoadBalancer) Select(hashInput string) *Upstream {
 	if len(lb.upstreams) == 0 {
 		return nil
 	}
@@ -59,13 +59,13 @@ func (lb LoadBalancer) Select(hashInput string) *Upstream {
 }
 
 // GetEnabled returns all enabled upstreams
-func (lb LoadBalancer) GetEnabled() []*Upstream {
+func (lb *LoadBalancer) GetEnabled() []*Upstream {
 	return lb.upstreams
 }
 
 // SelectNext returns the next upstream after 'after', wrapping to first if at end.
 // Returns nil if no upstreams available.
-func (lb LoadBalancer) SelectNext(after *Upstream) *Upstream {
+func (lb *LoadBalancer) SelectNext(after *Upstream) *Upstream {
 	if len(lb.upstreams) == 0 {
 		return nil
 	}

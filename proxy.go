@@ -41,7 +41,7 @@ func transformModelName(body []byte, defaultModel, upstreamModel string) []byte 
 
 // ProxyHandler manages HTTP proxying with authentication
 type ProxyHandler struct {
-	lb          LoadBalancer
+	lb          *LoadBalancer
 	apiKey      string
 	defaultModel string // default model for all requests
 	logChan     chan<- RequestLog  // For TUI display (no tokens)
@@ -62,7 +62,7 @@ type RequestLog struct {
 }
 
 // NewProxyHandler creates a new proxy handler
-func NewProxyHandler(lb LoadBalancer, apiKey string, defaultModel string, logChan chan RequestLog, usageChan chan RequestLog) *ProxyHandler {
+func NewProxyHandler(lb *LoadBalancer, apiKey string, defaultModel string, logChan chan RequestLog, usageChan chan RequestLog) *ProxyHandler {
 	return &ProxyHandler{
 		lb:          lb,
 		apiKey:      apiKey,
