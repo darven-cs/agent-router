@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Architecture Refactor
-status: executing
-stopped_at: Completed 04-02-PLAN.md
-last_updated: "2026-04-05T05:58:35.230Z"
-last_activity: 2026-04-05 -- 04-02 plan completed
+status: verifying
+stopped_at: Completed 04-03-PLAN.md
+last_updated: "2026-04-05T06:35:29.255Z"
+last_activity: 2026-04-05
 progress:
   total_phases: 3
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 3
-  completed_plans: 2
+  completed_plans: 3
   percent: 67
 ---
 
@@ -27,8 +27,8 @@ See: .planning/PROJECT.md (updated 2026-04-05)
 
 Phase: 04 (foundation-restructure) — EXECUTING
 Plan: 3 of 3
-Status: Plan 04-02 completed, executing 04-03
-Last activity: 2026-04-05 -- 04-02 plan completed
+Status: Phase complete — ready for verification
+Last activity: 2026-04-05
 
 Progress: [▓▓▓▓▓▓▓░░░] 67%
 
@@ -80,6 +80,10 @@ Recent decisions affecting current work:
 - [Phase 04]: UsageStats 封装 Record/GetCounts 方法解决跨包私有字段访问
 - [Phase 04]: ProxyHandler gains SetLoadBalancer/SetDefaultModel setter methods for doReload to update without recreating handler
 - [Phase 04]: AdminHandler receives reloadFn as func() error callback to decouple from App lifecycle
+- [Phase 04-foundation-restructure]: DefaultModel exported (capitalized) so cmd/agent-router/main.go can set it after NewModel construction
+- [Phase 04-foundation-restructure]: modelSelectIndex independent from selectedIndex for primary upstream selection (0=Auto, 1..N=upstreams)
+- [Phase 04-foundation-restructure]: proxyWithRetry checks GetPrimary() first before retry loop; falls back to SelectNext if primary unavailable
+- [Phase 04-foundation-restructure]: TUI Callbacks struct: 9 function fields replacing individual On* closures
 
 ### Pending Todos
 
@@ -92,6 +96,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-04-05T05:58:35.225Z
-Stopped at: Completed 04-02-PLAN.md
-Resume file: .planning/phases/04-foundation-restructure/04-02-SUMMARY.md
+Last session: 2026-04-05T06:35:20.613Z
+Stopped at: Completed 04-03-PLAN.md
+Resume file: None

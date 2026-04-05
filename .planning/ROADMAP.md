@@ -16,7 +16,7 @@
 
 </details>
 
-- [ ] **Phase 4: Foundation Restructure** — Go project layout, App struct, model select bug fix
+- [x] **Phase 4: Foundation Restructure** — Go project layout, App struct, model select bug fix (completed 2026-04-05)
 - [ ] **Phase 5: Event-Driven Decoupling** — Event bus, TUI componentization, config hot reload
 - [ ] **Phase 6: Request Pipeline** — Middleware chain, admin API with shared auth
 
@@ -36,7 +36,7 @@
 Plans:
 - [x] 04-01: Leaf package migration (config, upstream, storage) + primary upstream extension
 - [x] 04-02: Proxy/admin migration + App struct replacing all globals
-- [ ] 04-03: TUI split + primary upstream feature + final cmd/ layout + human verify
+- [x] 04-03: TUI split + primary upstream feature + final cmd/ layout + human verify
 
 ### Phase 5: Event-Driven Decoupling
 **Goal**: Subsystems communicate through typed events instead of hardcoded callbacks, TUI is decomposed into independent components, and config reload works from all three triggers
@@ -80,6 +80,6 @@ Phases execute in numeric order: 4 → 5 → 6
 | 1. Foundation | v1.0 | 1/1 | Complete | 2026-04-04 |
 | 2. Resilience | v1.0 | 2/2 | Complete | 2026-04-04 |
 | 3. Persistence | v1.0 | 4/4 | Complete | 2026-04-04 |
-| 4. Foundation Restructure | v2.0 | 0/3 | Not started | - |
+| 4. Foundation Restructure | v2.0 | 3/3 | Complete   | 2026-04-05 |
 | 5. Event-Driven Decoupling | v2.0 | 0/? | Not started | - |
 | 6. Request Pipeline | v2.0 | 0/? | Not started | - |
