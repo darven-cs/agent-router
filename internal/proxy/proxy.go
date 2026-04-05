@@ -52,6 +52,16 @@ func NewProxyHandler(lb *upstream.LoadBalancer, apiKey string, defaultModel stri
 	}
 }
 
+// SetLoadBalancer replaces the load balancer instance (used by doReload)
+func (h *ProxyHandler) SetLoadBalancer(lb *upstream.LoadBalancer) {
+	h.lb = lb
+}
+
+// SetDefaultModel updates the default model (used by doReload and TUI callbacks)
+func (h *ProxyHandler) SetDefaultModel(model string) {
+	h.defaultModel = model
+}
+
 // transformModelName replaces the model name in request JSON.
 // It uses the defaultModel if set, otherwise falls back to upstream-specific model.
 func transformModelName(body []byte, defaultModel, upstreamModel string) []byte {

@@ -1,8 +1,12 @@
 package storage
 
 import (
+	"fmt"
+	"os"
 	"sync"
 	"time"
+
+	"agent-router/internal/proxy"
 
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -62,4 +66,27 @@ func InitDB(dbPath string) (*gorm.DB, error) {
 	db.AutoMigrate(&UsageLog{})
 
 	return db, nil
+}
+
+// StartUsageWorker starts a goroutine that drains usageChan and writes to SQLite
+func StartUsageWorker(db *gorm.DB, usageChan <-chan proxy.RequestLog) {
+	go func() {
+		for log := range usageChan {
+			usageLog := UsageLog{
+				Timestamp:    log.Timestamp,
+				RequestID:    log.RequestID,
+				UpstreamName: log.UpstreamName,
+				InputTokens:  log.InputTokens,
+				OutputTokens: log.OutputTokens,
+				LatencyMs:    log.LatencyMs,
+				StatusCode:   log.StatusCode,
+			}
+
+			if err := db.Create(&usageLog).Error; err != nil {
+				fmt.Fprintf(os.Stderr, "Usage write error: %v\n", err)
+			} else {
+				Stats.Record(log.InputTokens, log.OutputTokens)
+			}
+		}
+	}()
 }
