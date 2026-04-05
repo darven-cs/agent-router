@@ -4,7 +4,7 @@ BIN=agent-router
 GO=go
 
 build:
-	$(GO) build -o $(BIN) .
+	$(GO) build -o $(BIN) ./cmd/agent-router
 
 run: build
 	./$(BIN)
