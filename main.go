@@ -7,143 +7,124 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/charmbracelet/bubbletea"
 	"gorm.io/gorm"
+
+	"agent-router/internal/admin"
+	"agent-router/internal/config"
+	"agent-router/internal/proxy"
+	"agent-router/internal/storage"
+	"agent-router/internal/upstream"
 )
 
-var (
+// App holds all application dependencies, replacing global variables
+type App struct {
+	cfg             *config.Config
 	db              *gorm.DB
-	usageChan       chan RequestLog
+	sharedUpstreams *upstream.SharedUpstreams
+	lb              *upstream.LoadBalancer
+	proxyHandler    *proxy.ProxyHandler
+	adminHandler    *admin.AdminHandler
+	usageChan       chan proxy.RequestLog
+	logChan         chan proxy.RequestLog
+	startTime       time.Time
 	execPath        string
-	sharedUpstreams *SharedUpstreams
-	lb              *LoadBalancer
-	proxyHandler    *ProxyHandler
-	cfg             *Config
-	startTime       = time.Now()
-)
+	server          *http.Server
+}
 
-func main() {
+// NewApp initializes all application dependencies
+func NewApp() (*App, error) {
+	app := &App{
+		startTime: time.Now(),
+	}
+
 	// Find config file - same directory as executable
 	var err error
-	execPath, err = os.Executable()
+	app.execPath, err = os.Executable()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to get executable path: %v\n", err)
-		os.Exit(1)
+		return nil, fmt.Errorf("failed to get executable path: %w", err)
 	}
-	configPath := filepath.Join(filepath.Dir(execPath), "config.yaml")
+	configPath := filepath.Join(filepath.Dir(app.execPath), "config.yaml")
 
 	// Load configuration
-	cfg, err = LoadConfig(configPath)
+	app.cfg, err = config.LoadConfig(configPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to load config from %s: %v\n", configPath, err)
-		os.Exit(1)
+		return nil, fmt.Errorf("failed to load config from %s: %w", configPath, err)
 	}
 
 	// Initialize shared upstreams from config
-	var upstreamList []*Upstream
-	for _, cfg := range cfg.Upstreams {
-		upstreamList = append(upstreamList, &Upstream{
-			Name:     cfg.Name,
-			URL:      cfg.URL,
-			APIKey:   cfg.APIKey,
-			AuthType: cfg.AuthType,
-			Enabled:  cfg.Enabled,
-			Timeout:  time.Duration(cfg.Timeout) * time.Second,
-			Model:    cfg.Model,
+	var upstreamList []*upstream.Upstream
+	for _, uc := range app.cfg.Upstreams {
+		upstreamList = append(upstreamList, &upstream.Upstream{
+			Name:     uc.Name,
+			URL:      uc.URL,
+			APIKey:   uc.APIKey,
+			AuthType: uc.AuthType,
+			Enabled:  uc.Enabled,
+			Timeout:  time.Duration(uc.Timeout) * time.Second,
+			Model:    uc.Model,
 		})
 	}
-	sharedUpstreams = NewSharedUpstreams(upstreamList)
+	app.sharedUpstreams = upstream.NewSharedUpstreams(upstreamList)
 
 	// Create load balancer
-	lb = NewLoadBalancer(cfg.Upstreams)
+	app.lb = upstream.NewLoadBalancer(app.cfg.Upstreams)
 
 	// Create log channel for request updates
-	logChan := make(chan RequestLog, 100)
+	app.logChan = make(chan proxy.RequestLog, 100)
 
 	// Create usage channel for SQLite persistence
-	usageChan = make(chan RequestLog, 100)
+	app.usageChan = make(chan proxy.RequestLog, 100)
 
 	// Initialize SQLite for usage tracking
-	dbPath := filepath.Join(filepath.Dir(execPath), "usage.db")
-	db, err = initDB(dbPath)
+	dbPath := filepath.Join(filepath.Dir(app.execPath), "usage.db")
+	app.db, err = storage.InitDB(dbPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to init usage DB: %v\n", err)
 		// Continue without usage tracking - non-fatal
 	}
 
 	// Start usage worker goroutine
-	if db != nil {
-		go StartUsageWorker(db, usageChan)
+	if app.db != nil {
+		storage.StartUsageWorker(app.db, app.usageChan)
 	}
 
 	// Create proxy handler
-	proxyHandler = NewProxyHandler(lb, cfg.Service.APIKey, cfg.Service.Model, logChan, usageChan)
+	app.proxyHandler = proxy.NewProxyHandler(app.lb, app.cfg.Service.APIKey, app.cfg.Service.Model, app.logChan, app.usageChan)
 
-	// Create TUI model with callbacks for upstream changes
-	tuiModel := NewModel(cfg.Service.Name, cfg.Service.Version, cfg.Service.Port, sharedUpstreams.GetAll())
-	tuiModel.defaultModel = cfg.Service.Model
-	tuiModel.OnUpstreamAdded = func(u *Upstream) {
-		sharedUpstreams.Add(u)
-		lb.AddUpstream(u)
-		if err := persistConfig(); err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to persist config: %v\n", err)
+	// Create admin handler
+	app.adminHandler = admin.NewAdminHandler(
+		app.cfg, app.db, storage.Stats, app.sharedUpstreams,
+		app.startTime, app.doReload,
+	)
+
+	return app, nil
+}
+
+// Run starts the HTTP server and TUI
+func (app *App) Run() error {
+	// Create HTTP handler with path-based routing
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/admin/") {
+			app.adminHandler.ServeHTTP(w, r)
+		} else {
+			app.proxyHandler.ServeHTTP(w, r)
 		}
-	}
-	tuiModel.OnUpstreamUpdated = func(u *Upstream, oldName string) {
-		if oldName != "" && oldName != u.Name {
-			sharedUpstreams.Delete(oldName)
-			lb.DeleteUpstream(oldName)
-		}
-		sharedUpstreams.Update(u.Name, u)
-		lb.UpdateUpstream(u)
-		if err := persistConfig(); err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to persist config: %v\n", err)
-		}
-	}
-	tuiModel.OnUpstreamDeleted = func(name string) {
-		sharedUpstreams.Delete(name)
-		lb.DeleteUpstream(name)
-		if err := persistConfig(); err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to persist config: %v\n", err)
-		}
-	}
-	tuiModel.OnUpstreamToggled = func(u *Upstream) {
-		sharedUpstreams.Update(u.Name, u)
-		lb.UpdateUpstream(u)
-		if err := persistConfig(); err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to persist config: %v\n", err)
-		}
-	}
-	tuiModel.OnDefaultModelChanged = func(model string) {
-		cfg.Service.Model = model
-		proxyHandler.defaultModel = model
-		if err := persistConfig(); err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to persist config: %v\n", err)
-		}
-	}
-	tuiModel.OnUpstreamModelSelected = func(u *Upstream) {
-		sharedUpstreams.Update(u.Name, u)
-		lb.UpdateUpstream(u)
-		if err := persistConfig(); err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to persist upstream model: %v\n", err)
-		}
-	}
-	tuiModel.OnReload = func() error {
-		return doReload()
-	}
+	})
 
 	// Start HTTP server in background
-	server := &http.Server{
-		Addr:    fmt.Sprintf(":%d", cfg.Service.Port),
-		Handler: proxyHandler,
+	app.server = &http.Server{
+		Addr:    fmt.Sprintf(":%d", app.cfg.Service.Port),
+		Handler: handler,
 	}
 
 	go func() {
-		fmt.Printf("Starting HTTP server on port %d...\n", cfg.Service.Port)
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		fmt.Printf("Starting HTTP server on port %d...\n", app.cfg.Service.Port)
+		if err := app.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			fmt.Fprintf(os.Stderr, "HTTP server error: %v\n", err)
 		}
 	}()
@@ -154,16 +135,69 @@ func main() {
 	go func() {
 		for range sighupChan {
 			fmt.Println("Received SIGHUP, reloading configuration...")
-			if err := doReload(); err != nil {
+			if err := app.doReload(); err != nil {
 				fmt.Fprintf(os.Stderr, "Config reload failed: %v\n", err)
 			}
 		}
 	}()
 
+	// Create TUI model with callbacks for upstream changes
+	tuiModel := NewModel(app.cfg.Service.Name, app.cfg.Service.Version, app.cfg.Service.Port, app.sharedUpstreams.GetAll())
+	tuiModel.defaultModel = app.cfg.Service.Model
+	tuiModel.OnUpstreamAdded = func(u *upstream.Upstream) {
+		app.sharedUpstreams.Add(u)
+		app.lb.AddUpstream(u)
+		if err := app.persistConfig(); err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to persist config: %v\n", err)
+		}
+	}
+	tuiModel.OnUpstreamUpdated = func(u *upstream.Upstream, oldName string) {
+		if oldName != "" && oldName != u.Name {
+			app.sharedUpstreams.Delete(oldName)
+			app.lb.DeleteUpstream(oldName)
+		}
+		app.sharedUpstreams.Update(u.Name, u)
+		app.lb.UpdateUpstream(u)
+		if err := app.persistConfig(); err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to persist config: %v\n", err)
+		}
+	}
+	tuiModel.OnUpstreamDeleted = func(name string) {
+		app.sharedUpstreams.Delete(name)
+		app.lb.DeleteUpstream(name)
+		if err := app.persistConfig(); err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to persist config: %v\n", err)
+		}
+	}
+	tuiModel.OnUpstreamToggled = func(u *upstream.Upstream) {
+		app.sharedUpstreams.Update(u.Name, u)
+		app.lb.UpdateUpstream(u)
+		if err := app.persistConfig(); err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to persist config: %v\n", err)
+		}
+	}
+	tuiModel.OnDefaultModelChanged = func(model string) {
+		app.cfg.Service.Model = model
+		app.proxyHandler.SetDefaultModel(model)
+		if err := app.persistConfig(); err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to persist config: %v\n", err)
+		}
+	}
+	tuiModel.OnUpstreamModelSelected = func(u *upstream.Upstream) {
+		app.sharedUpstreams.Update(u.Name, u)
+		app.lb.UpdateUpstream(u)
+		if err := app.persistConfig(); err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to persist upstream model: %v\n", err)
+		}
+	}
+	tuiModel.OnReload = func() error {
+		return app.doReload()
+	}
+
 	// Run TUI
 	p := tea.NewProgram(tuiModel, tea.WithAltScreen())
 	go func() {
-		for log := range logChan {
+		for log := range app.logChan {
 			p.Send(log)
 		}
 	}()
@@ -172,33 +206,41 @@ func main() {
 		fmt.Fprintf(os.Stderr, "TUI error: %v\n", err)
 	}
 
-	// Graceful shutdown with 10s timeout
+	// Graceful shutdown
+	return app.Shutdown()
+}
+
+// Shutdown gracefully stops the HTTP server and closes channels
+func (app *App) Shutdown() error {
 	fmt.Println("\nShutting down gracefully...")
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	if err := server.Shutdown(ctx); err != nil {
-		fmt.Fprintf(os.Stderr, "Shutdown error (forcing close): %v\n", err)
-		server.Close()
+	if app.server != nil {
+		if err := app.server.Shutdown(ctx); err != nil {
+			fmt.Fprintf(os.Stderr, "Shutdown error (forcing close): %v\n", err)
+			app.server.Close()
+		}
 	}
 
 	// Close usage channel to signal worker to stop
-	close(usageChan)
+	if app.usageChan != nil {
+		close(app.usageChan)
+	}
 
 	fmt.Println("Goodbye!")
+	return nil
 }
 
 // persistConfig saves the current upstream configuration to config.yaml
-// This is called after each TUI add/edit/delete/enable/disable to ensure
-// runtime changes survive SIGHUP reload.
-func persistConfig() error {
-	configPath := filepath.Join(filepath.Dir(execPath), "config.yaml")
+func (app *App) persistConfig() error {
+	configPath := filepath.Join(filepath.Dir(app.execPath), "config.yaml")
 
 	// Build UpstreamConfig list from current SharedUpstreams state
-	upstreams := sharedUpstreams.GetAll()
-	upstreamConfigs := make([]UpstreamConfig, 0, len(upstreams))
+	upstreams := app.sharedUpstreams.GetAll()
+	upstreamConfigs := make([]config.UpstreamConfig, 0, len(upstreams))
 	for _, u := range upstreams {
-		upstreamConfigs = append(upstreamConfigs, UpstreamConfig{
+		upstreamConfigs = append(upstreamConfigs, config.UpstreamConfig{
 			Name:     u.Name,
 			URL:      u.URL,
 			APIKey:   u.APIKey,
@@ -210,30 +252,30 @@ func persistConfig() error {
 	}
 
 	// Create a new Config with current state
-	newCfg := &Config{
-		Service:   cfg.Service,
+	newCfg := &config.Config{
+		Service:   app.cfg.Service,
 		Upstreams: upstreamConfigs,
 	}
 
-	return SaveConfig(newCfg, configPath)
+	return config.SaveConfig(newCfg, configPath)
 }
 
 // doReload re-reads config.yaml and reinitializes the LoadBalancer
-func doReload() error {
-	configPath := filepath.Join(filepath.Dir(execPath), "config.yaml")
+func (app *App) doReload() error {
+	configPath := filepath.Join(filepath.Dir(app.execPath), "config.yaml")
 
-	newCfg, err := LoadConfig(configPath)
+	newCfg, err := config.LoadConfig(configPath)
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
-	// Re-initialize LoadBalancer from config
-	newUpstreams := NewLoadBalancer(newCfg.Upstreams)
+	// Create new LoadBalancer from config
+	app.lb = upstream.NewLoadBalancer(newCfg.Upstreams)
 
 	// Create new upstream list from config
-	var newList []*Upstream
+	var newList []*upstream.Upstream
 	for _, uc := range newCfg.Upstreams {
-		newList = append(newList, &Upstream{
+		newList = append(newList, &upstream.Upstream{
 			Name:     uc.Name,
 			URL:      uc.URL,
 			APIKey:   uc.APIKey,
@@ -245,26 +287,34 @@ func doReload() error {
 	}
 
 	// Update shared upstreams (thread-safe via ReplaceAll)
-	sharedUpstreams.ReplaceAll(newList)
-
-	// Re-create load balancer (replace the old one)
-	lb = newUpstreams
+	app.sharedUpstreams.ReplaceAll(newList)
 
 	// Update proxy handler's load balancer reference
-	proxyHandler.lb = lb
-	proxyHandler.defaultModel = newCfg.Service.Model
+	app.proxyHandler.SetLoadBalancer(app.lb)
+	app.proxyHandler.SetDefaultModel(newCfg.Service.Model)
 
-	// Update global cfg reference
-	cfg = newCfg
+	// Update config reference
+	app.cfg = newCfg
+
+	// Recreate admin handler with new config
+	app.adminHandler = admin.NewAdminHandler(
+		app.cfg, app.db, storage.Stats, app.sharedUpstreams,
+		app.startTime, app.doReload,
+	)
 
 	fmt.Println("Config reloaded successfully")
 	return nil
 }
 
-// HandleSignals sets up signal handling for graceful shutdown
-func HandleSignals(done chan<- bool) {
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-	<-sigChan
-	done <- true
+func main() {
+	app, err := NewApp()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to initialize: %v\n", err)
+		os.Exit(1)
+	}
+
+	if err := app.Run(); err != nil {
+		fmt.Fprintf(os.Stderr, "Application error: %v\n", err)
+		os.Exit(1)
+	}
 }

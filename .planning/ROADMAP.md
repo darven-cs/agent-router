@@ -35,7 +35,7 @@
 
 Plans:
 - [x] 04-01: Leaf package migration (config, upstream, storage) + primary upstream extension
-- [ ] 04-02: Proxy/admin migration + App struct replacing all globals
+- [x] 04-02: Proxy/admin migration + App struct replacing all globals
 - [ ] 04-03: TUI split + primary upstream feature + final cmd/ layout + human verify
 
 ### Phase 5: Event-Driven Decoupling
