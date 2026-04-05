@@ -65,27 +65,27 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| ARCH-01 | — | Pending |
-| ARCH-02 | — | Pending |
-| ARCH-03 | — | Pending |
-| ARCH-04 | — | Pending |
-| ARCH-05 | — | Pending |
-| ARCH-06 | — | Pending |
-| TUI-01 | — | Pending |
-| TUI-02 | — | Pending |
-| TUI-03 | — | Pending |
-| TUI-04 | — | Pending |
-| CONF-01 | — | Pending |
-| CONF-02 | — | Pending |
-| CONF-03 | — | Pending |
-| ADMIN-01 | — | Pending |
-| ADMIN-02 | — | Pending |
+| ARCH-01 | Phase 4 | Pending |
+| ARCH-02 | Phase 4 | Pending |
+| ARCH-03 | Phase 5 | Pending |
+| ARCH-04 | Phase 5 | Pending |
+| ARCH-05 | Phase 6 | Pending |
+| ARCH-06 | Phase 6 | Pending |
+| TUI-01 | Phase 4 | Pending |
+| TUI-02 | Phase 5 | Pending |
+| TUI-03 | Phase 5 | Pending |
+| TUI-04 | Phase 5 | Pending |
+| CONF-01 | Phase 5 | Pending |
+| CONF-02 | Phase 5 | Pending |
+| CONF-03 | Phase 5 | Pending |
+| ADMIN-01 | Phase 6 | Pending |
+| ADMIN-02 | Phase 6 | Pending |
 
 **Coverage:**
 - v2.0 requirements: 15 total
-- Mapped to phases: 0
-- Unmapped: 15 ⚠️
+- Mapped to phases: 15
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-04-05*
-*Last updated: 2026-04-05 after initial definition*
+*Last updated: 2026-04-05 after roadmap creation*

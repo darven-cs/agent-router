@@ -2,12 +2,12 @@
 gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Architecture Refactor
-status: defining_requirements
-stopped_at: Defining requirements
-last_updated: "2026-04-05T10:00:00.000Z"
+status: roadmap_created
+stopped_at: Roadmap created, ready for planning
+last_updated: "2026-04-05T11:00:00.000Z"
 last_activity: 2026-04-05
 progress:
-  total_phases: 0
+  total_phases: 3
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -21,49 +21,56 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-05)
 
 **Core value:** Claude Code 请求永不中断 — 多上游自动切换保障可用性，负载均衡优化成本
-**Current focus:** Defining v2.0 Architecture Refactor requirements
+**Current focus:** Phase 4 — Foundation Restructure
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: 4 of 6 (Foundation Restructure)
 Plan: —
-Status: Defining requirements
-Last activity: 2026-04-05 — Milestone v2.0 started
+Status: Ready to plan
+Last activity: 2026-04-05 — v2.0 roadmap created (Phases 4-6)
+
+Progress: [░░░░░░░░░░] 0%
 
 ## Milestone Summary
 
 **v1.0 MVP** — 3 phases, 7 plans, 21 tasks, 1890 LOC Go
 Archived to: .planning/milestones/v1.0-ROADMAP.md, v1.0-REQUIREMENTS.md
 
-### Known Gaps (deferred to v2.0)
+**v2.0 Architecture Refactor** — 3 phases, 15 requirements
+- Phase 4: Foundation Restructure (ARCH-01, ARCH-02, TUI-01)
+- Phase 5: Event-Driven Decoupling (ARCH-03, ARCH-04, TUI-02, TUI-03, TUI-04, CONF-01, CONF-02, CONF-03)
+- Phase 6: Request Pipeline (ARCH-05, ARCH-06, ADMIN-01, ADMIN-02)
 
-- CONF-01/02/03: Config hot reload (SIGHUP/TUI/API) partially implemented
-- ADMIN-01/02: Admin API routing incomplete
+### Known Gaps (from v1.0, addressed in v2.0)
+
+- CONF-01/02/03: Config hot reload via events → Phase 5
+- ADMIN-01/02: Admin API with shared auth → Phase 6
 
 ## Performance Metrics
 
 **Velocity:**
-
-- Total plans completed: 7
+- Total plans completed: 7 (v1.0)
 - Average duration: -
 - Total execution time: 2 days (2026-04-03 → 2026-04-04)
 
 **By Phase:**
 
-| Phase | Plans | Tasks | Files |
-|-------|-------|-------|-------|
-| Phase 01-foundation P01 | 245 | 4 tasks | 9 files |
-| Phase 02-resilience P01 | 3 | 3 tasks | 2 files |
-| Phase 03-persistence P01 | 3 | 3 tasks | 3 files |
-| Phase 03 P03 | 6 | 3 tasks | 4 files |
-| Phase 03 P02 | 10 | 3 tasks | 4 files |
-| Phase 03 P04 | 661 | 2 tasks | 2 files |
+| Phase | Plans | Completed |
+|-------|-------|-----------|
+| 1. Foundation (v1.0) | 1 | 1 |
+| 2. Resilience (v1.0) | 2 | 2 |
+| 3. Persistence (v1.0) | 4 | 4 |
 
 ## Accumulated Context
 
 ### Decisions
 
 Decisions are logged in PROJECT.md Key Decisions table.
+Recent decisions affecting current work:
+
+- [Roadmap]: Coarse granularity → compress research's 4 phases into 3 (merge Event Bus + TUI Decomp into one phase)
+- [Roadmap]: Phase 5 and Phase 6 are independent after Phase 4 (event bus = vertical decoupling, middleware = horizontal request pipeline)
 
 ### Pending Todos
 
@@ -71,17 +78,11 @@ None.
 
 ### Blockers/Concerns
 
-None.
-
-### Quick Tasks Completed
-
-| # | Description | Date | Commit | Directory |
-|---|-------------|------|--------|-----------|
-| 260404-q4m | TUI 新快捷键导致模型切换问题修复 | 2026-04-04 | cd0f316 | [260404-q4m-tui](./quick/260404-q4m-tui/) |
-| 260404-qrg | TUI选择其他上游模型后仍使用Zhipu | 2026-04-04 | 521604b | [260404-qrg-tui-zhipu](./quick/260404-qrg-tui-zhipu/) |
+- Import cycle risk during Phase 4 restructuring (create dependency-free packages first, move one file at a time)
+- Event bus goroutine leak prevention (context.WithCancel for subscribers, Close() method with closed flag)
 
 ## Session Continuity
 
 Last session: 2026-04-05
-Stopped at: Defining v2.0 requirements
+Stopped at: v2.0 roadmap created, Phase 4 ready for planning
 Resume file: None
