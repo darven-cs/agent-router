@@ -217,14 +217,22 @@ func (h *ProxyHandler) proxyWithRetry(w http.ResponseWriter, r *http.Request, re
 	var lastErr error
 	retryCount := 0
 	delay := baseDelay
+	isPrimaryAttempt := false // 追踪是否在尝试主上游
 
 	// Primary upstream check: if set, try it first
 	primary := h.lb.GetPrimary()
+
+	// Bug fix: 检查是否应该跳过主上游（连续失败后）
+	if primary != nil && h.lb.ShouldSkipPrimary() {
+		primary = nil
+	}
+
 	if primary != nil {
 		// Verify primary is still in enabled list
 		for _, u := range enabled {
 			if u == primary && u.Enabled {
 				lastUpstream = primary
+				isPrimaryAttempt = true
 				break
 			}
 		}
@@ -232,12 +240,14 @@ func (h *ProxyHandler) proxyWithRetry(w http.ResponseWriter, r *http.Request, re
 	// If no primary or primary not valid, use normal selection
 	if lastUpstream == nil {
 		lastUpstream = h.lb.SelectNext(nil)
+		isPrimaryAttempt = false
 	}
 
 	for attempt := 0; attempt <= maxRetries; attempt++ {
 		upstream := lastUpstream
 		if attempt > 0 {
 			upstream = h.lb.SelectNext(lastUpstream)
+			isPrimaryAttempt = false // 重试时不再是主上游尝试
 		}
 		if upstream == nil {
 			upstream = enabled[0]
@@ -245,10 +255,19 @@ func (h *ProxyHandler) proxyWithRetry(w http.ResponseWriter, r *http.Request, re
 
 		retryable, statusCode := h.proxyRequest(w, r, upstream, requestID, attempt, retryCount)
 		if retryable == nil {
+			// 成功：清除主上游的失败计数
+			if isPrimaryAttempt {
+				h.lb.ClearPrimaryFailure()
+			}
 			return // success
 		}
 		lastErr = retryable
 		lastUpstream = upstream
+
+		// 如果是主上游失败，追踪它
+		if isPrimaryAttempt && primary != nil && upstream == primary {
+			h.lb.TrackPrimaryFailure()
+		}
 
 		// Check if retryable per D-01: only timeout, 5xx, or 429
 		if !isRetryable(lastErr, statusCode) {
