@@ -3,7 +3,7 @@ service:
     version: 1.0.0
     port: 6856
     api_key: 4bab126d59174f4f8277fe51e8517ffb.705eITZG3vJqMw7V
-    model: MiniMax-M2.7
+    model: claude-sonnet-4.6
 upstreams:
     - name: Zhipu
       url: https://open.bigmodel.cn/api/anthropic

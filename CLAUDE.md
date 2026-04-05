@@ -1,3 +1,6 @@
+## 全局要求
+**使用中文回答和写文档**：为了可读性，请你全程使用中文回答和写文档.
+
 <!-- GSD:project-start source:PROJECT.md -->
 ## Project
 
