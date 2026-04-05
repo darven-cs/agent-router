@@ -1,17 +1,17 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.0
-milestone_name: MVP
-status: milestone_complete
-stopped_at: v1.0 MVP milestone archived
-last_updated: "2026-04-05T02:22:26.063Z"
+milestone: v2.0
+milestone_name: Architecture Refactor
+status: defining_requirements
+stopped_at: Defining requirements
+last_updated: "2026-04-05T10:00:00.000Z"
 last_activity: 2026-04-05
 progress:
-  total_phases: 3
-  completed_phases: 3
-  total_plans: 7
-  completed_plans: 7
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
@@ -21,22 +21,21 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-05)
 
 **Core value:** Claude Code 请求永不中断 — 多上游自动切换保障可用性，负载均衡优化成本
-**Current focus:** Planning next milestone
+**Current focus:** Defining v2.0 Architecture Refactor requirements
 
 ## Current Position
 
-Phase: All v1.0 phases complete
-Status: Milestone v1.0 MVP archived
-Last activity: 2026-04-05 - Milestone completion and archival
-
-Progress: [██████████] 100%
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-04-05 — Milestone v2.0 started
 
 ## Milestone Summary
 
 **v1.0 MVP** — 3 phases, 7 plans, 21 tasks, 1890 LOC Go
 Archived to: .planning/milestones/v1.0-ROADMAP.md, v1.0-REQUIREMENTS.md
 
-### Known Gaps (deferred to v1.1)
+### Known Gaps (deferred to v2.0)
 
 - CONF-01/02/03: Config hot reload (SIGHUP/TUI/API) partially implemented
 - ADMIN-01/02: Admin API routing incomplete
@@ -84,5 +83,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-04-05
-Stopped at: v1.0 MVP milestone complete
+Stopped at: Defining v2.0 requirements
 Resume file: None

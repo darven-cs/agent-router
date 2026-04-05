@@ -22,6 +22,11 @@ Claude Code 请求永不中断 — 多上游自动切换保障可用性，负载
 
 ### Active
 
+- [ ] TUI handleModelSelect 模型选择后更新全局默认模型 (TUI-01)
+- [ ] 目录结构重组：Standard Go Project Layout + Clean Architecture (ARCH-01)
+- [ ] 事件驱动架构：Go Channel Event Bus 替代硬回调 (ARCH-02)
+- [ ] 洋葱中间件模式：proxy 层解耦为可组合中间件链 (ARCH-03)
+- [ ] TUI 组件化：拆分 tui.go 为 app/update/view/form 子模块 (TUI-02)
 - [ ] 配置热更新完整实现：SIGHUP / TUI 按钮 / POST /admin/reload (CONF-01/02/03)
 - [ ] Admin API 完整路由：GET /admin/status, POST /admin/reload (ADMIN-01/02)
 
@@ -34,6 +39,17 @@ Claude Code 请求永不中断 — 多上游自动切换保障可用性，负载
 - 多租户 — 单用户本地工具
 - Prometheus metrics — v2 考虑
 
+## Current Milestone: v2.0 Architecture Refactor
+
+**Goal:** 将 MVP 单体代码重构为高内聚低耦合的模块化架构，修复 TUI 模型选择 Bug
+
+**Target features:**
+- TUI handleModelSelect Bug 修复 — 模型选择后更新全局默认模型
+- 目录结构重组 — Standard Go Project Layout (cmd/internal 分层)
+- 事件驱动架构 — Go Channel Event Bus 替代硬回调
+- 洋葱中间件模式 — proxy 层解耦为可组合中间件链
+- TUI 组件化 — 拆分 800+ 行 tui.go 为 app/update/view/form
+
 ## Context
 
 - **技术栈**: Go 原生 `net/http` + bubbletea/lipgloss TUI + SQLite/GORM
@@ -41,6 +57,7 @@ Claude Code 请求永不中断 — 多上游自动切换保障可用性，负载
 - **部署环境**: 本地运行，单二进制文件
 - **数据存储**: 本地 `usage.db` SQLite 文件
 - **已交付**: v1.0 MVP — 3 phases, 7 plans, 21 tasks, 54 commits
+- **重构目标**: v2.0 — 从单体 ~1890 LOC 重构为模块化架构，不改变外部 API 行为
 
 ## Constraints
 
@@ -61,5 +78,22 @@ Claude Code 请求永不中断 — 多上游自动切换保障可用性，负载
 | Admin API 复用 x-api-key 鉴权 | 统一鉴权逻辑 | ✓ Good — 无额外复杂度 |
 | Config write-back via SaveConfig() | TUI 变更需要持久化 | ✓ Good — 解决 doReload 覆盖问题 |
 
+## Evolution
+
+This document evolves at phase transitions and milestone boundaries.
+
+**After each phase transition** (via `/gsd:transition`):
+1. Requirements invalidated? → Move to Out of Scope with reason
+2. Requirements validated? → Move to Validated with phase reference
+3. New requirements emerged? → Add to Active
+4. Decisions to log? → Add to Key Decisions
+5. "What This Is" still accurate? → Update if drifted
+
+**After each milestone** (via `/gsd:complete-milestone`):
+1. Full review of all sections
+2. Core Value check — still the right priority?
+3. Audit Out of Scope — reasons still valid?
+4. Update Context with current state
+
 ---
-*Last updated: 2026-04-05 after v1.0 MVP milestone*
+*Last updated: 2026-04-05 after milestone v2.0 started*
