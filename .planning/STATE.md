@@ -1,68 +1,58 @@
 ---
 gsd_state_version: 1.0
 milestone: v1.0
-milestone_name: milestone
-status: verifying
-stopped_at: Completed 03-04-PLAN.md - config write-back gap closure
-last_updated: "2026-04-04T09:58:41.659Z"
-last_activity: 2026-04-04
+milestone_name: MVP
+status: milestone_complete
+stopped_at: v1.0 MVP milestone archived
+last_updated: "2026-04-05T02:22:26.063Z"
+last_activity: 2026-04-05
 progress:
   total_phases: 3
   completed_phases: 3
   total_plans: 7
   completed_plans: 7
-  percent: 0
+  percent: 100
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-04-03)
+See: .planning/PROJECT.md (updated 2026-04-05)
 
 **Core value:** Claude Code 请求永不中断 — 多上游自动切换保障可用性，负载均衡优化成本
-**Current focus:** Phase 03 — persistence (gap closure)
+**Current focus:** Planning next milestone
 
 ## Current Position
 
-Phase: 03
-Plan: Not started
-Status: Phase complete — ready for verification
-Last activity: 2026-04-04 - Completed quick task 260404-qrg: TUI选择其他上游模型后仍使用Zhipu
+Phase: All v1.0 phases complete
+Status: Milestone v1.0 MVP archived
+Last activity: 2026-04-05 - Milestone completion and archival
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [██████████] 100%
 
-## Gap Closure Summary
+## Milestone Summary
 
-**Phase 03 verification found 3 partial requirements (CONF-04, CONF-05, CONF-06):**
+**v1.0 MVP** — 3 phases, 7 plans, 21 tasks, 1890 LOC Go
+Archived to: .planning/milestones/v1.0-ROADMAP.md, v1.0-REQUIREMENTS.md
 
-- Root cause: TUI add/edit/delete/enable/disable changes modify sharedUpstreams and lb in-memory, but doReload() reinitializes from config.yaml on SIGHUP, losing runtime changes.
-- Fix: Implement config write-back via SaveConfig() function
+### Known Gaps (deferred to v1.1)
 
-**Created:**
-
-- 03-04-PLAN.md: Config write-back to persist TUI changes to config.yaml
+- CONF-01/02/03: Config hot reload (SIGHUP/TUI/API) partially implemented
+- ADMIN-01/02: Admin API routing incomplete
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 0
+- Total plans completed: 7
 - Average duration: -
-- Total execution time: 0 hours
+- Total execution time: 2 days (2026-04-03 → 2026-04-04)
 
 **By Phase:**
 
-| Phase | Plans | Total | Avg/Plan |
-|-------|-------|-------|----------|
-| - | - | - | - |
-
-**Recent Trend:**
-
-- Last 5 plans: No plans completed yet
-- Trend: N/A
-
-*Updated after each plan completion*
+| Phase | Plans | Tasks | Files |
+|-------|-------|-------|-------|
 | Phase 01-foundation P01 | 245 | 4 tasks | 9 files |
 | Phase 02-resilience P01 | 3 | 3 tasks | 2 files |
 | Phase 03-persistence P01 | 3 | 3 tasks | 3 files |
@@ -75,30 +65,14 @@ Progress: [░░░░░░░░░░] 0%
 ### Decisions
 
 Decisions are logged in PROJECT.md Key Decisions table.
-Recent decisions affecting current work:
-
-- Phase 1: Foundation phase structure based on research summary
-- Phase 2: Failover logic will use exponential backoff (1s, 2s, 4s)
-- Phase 3: SQLite writes will be async via goroutine channel
-- [Phase 01-foundation]: Phase 1: Used lipgloss v0.6.0 instead of v2.0.0 due to Go module tagging
-- [Phase 02-resilience]: Exponential backoff: 1s base, 2x multiplier, 4s cap (3 retries max)
-- [Phase 02-resilience]: isRetryable returns false by default, true only for timeout/5xx/429 per D-01
-- [Phase 03-persistence]: SQLite writes via single goroutine draining channel (avoids database locked errors)
-- [Phase 03]: Admin endpoints use same auth as /v1/messages (x-api-key or Bearer token)
-- [Phase 03-gaps]: Config write-back via SaveConfig() to persist TUI changes to config.yaml
-- [Phase 03]: Config write-back via SaveConfig() - TUI changes persist to config.yaml
 
 ### Pending Todos
 
-[From .planning/todos/pending/ — ideas captured during sessions]
-
-None yet.
+None.
 
 ### Blockers/Concerns
 
-[Issues that affect future work]
-
-None yet.
+None.
 
 ### Quick Tasks Completed
 
@@ -109,6 +83,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-04T09:54:55.829Z
-Stopped at: Completed 03-04-PLAN.md - config write-back gap closure
+Last session: 2026-04-05
+Stopped at: v1.0 MVP milestone complete
 Resume file: None
