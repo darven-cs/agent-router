@@ -7,16 +7,18 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// View renders the TUI with three-section layout
+// View renders the TUI with four-section layout
 func (m Model) View() string {
 	nav := m.renderNavigation()
 	content := m.renderContent()
+	logs := m.renderLogs()
 	status := m.renderStatus()
 
 	return lipgloss.JoinVertical(
 		lipgloss.Top,
 		nav,
 		content,
+		logs,
 		status,
 	)
 }
@@ -432,4 +434,76 @@ func stripAnsi(s string) string {
 		}
 	}
 	return result
+}
+
+// renderLogs renders the request logs area
+func (m Model) renderLogs() string {
+	contentWidth := m.width - 4
+
+	logStyle := lipgloss.NewStyle().
+		Width(contentWidth).
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(subtextColor).
+		Padding(1, 1, 0, 1)
+
+	headerStyle := lipgloss.NewStyle().
+		Foreground(subtextColor).
+		Bold(true)
+
+	logEntryStyle := lipgloss.NewStyle().
+		Foreground(textColor)
+
+	dimStyle := lipgloss.NewStyle().
+		Foreground(subtextColor)
+
+	successStyle := lipgloss.NewStyle().Foreground(greenColor)
+	errorStyle := lipgloss.NewStyle().Foreground(redColor)
+
+	var lines []string
+
+	lines = append(lines, headerStyle.Render("Request Logs (Latest 10)"))
+
+	if len(m.logs) == 0 {
+		lines = append(lines, dimStyle.Render("  (no requests yet)"))
+	} else {
+		// Show last 10 logs in reverse order (newest first)
+		start := len(m.logs) - 10
+		if start < 0 {
+			start = 0
+		}
+		for i := len(m.logs) - 1; i >= start; i-- {
+			log := m.logs[i]
+			timestamp := log.Timestamp.Format("15:04:05")
+
+			// Build model string
+			modelStr := log.Model
+			if modelStr == "" {
+				modelStr = "unknown"
+			}
+
+			// Build status indicator
+			statusStr := successStyle.Render("✓")
+			if log.StatusCode >= 400 || log.StatusCode == 0 {
+				statusStr = errorStyle.Render("✗")
+			}
+
+			// Format: TIME - MODEL: REQUEST / RESPONSE
+			line := fmt.Sprintf("  %s - %s: %s / %s %s",
+				dimStyle.Render(timestamp),
+				modelStr,
+				log.RequestSummary,
+				log.ResponseSummary,
+				statusStr,
+			)
+
+			lines = append(lines, logEntryStyle.Render(line))
+		}
+	}
+
+	content := lipgloss.JoinVertical(
+		lipgloss.Top,
+		lines...,
+	)
+
+	return logStyle.Render(content)
 }

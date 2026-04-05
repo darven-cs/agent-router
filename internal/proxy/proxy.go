@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/ioutil"
 	"net/http"
 	"net/url"
@@ -30,6 +31,9 @@ type RequestLog struct {
 	RetryCount   int // Total retries for this request
 	InputTokens  int // Tokens in request
 	OutputTokens int // Tokens in response
+	Model        string // Model used for this request
+	RequestSummary string // Brief request info (e.g., "POST /v1/messages")
+	ResponseSummary string // Brief response info (e.g., "200 OK - 1.2k tokens")
 }
 
 // ProxyHandler manages HTTP proxying with authentication
@@ -125,9 +129,27 @@ func (h *ProxyHandler) proxyRequest(w http.ResponseWriter, r *http.Request, upst
 		return err, 0
 	}
 
+	// Extract model from request body for logging
+	var requestData map[string]interface{}
+	requestModel := "unknown"
+	if err := json.Unmarshal(bodyBytes, &requestData); err == nil {
+		if model, ok := requestData["model"].(string); ok {
+			requestModel = model
+		}
+	}
+
 	// Transform model name if upstream specifies one
 	if upstream.Model != "" || h.defaultModel != "" {
 		bodyBytes = transformModelName(bodyBytes, h.defaultModel, upstream.Model)
+	}
+
+	// Determine final model after transformation
+	var finalData map[string]interface{}
+	finalModel := requestModel
+	if err := json.Unmarshal(bodyBytes, &finalData); err == nil {
+		if model, ok := finalData["model"].(string); ok {
+			finalModel = model
+		}
 	}
 
 	// Build upstream URL - append /v1/messages if not present
@@ -170,7 +192,7 @@ func (h *ProxyHandler) proxyRequest(w http.ResponseWriter, r *http.Request, upst
 	latencyMs := time.Since(start).Milliseconds()
 
 	if err != nil {
-		h.logToChan(requestID, latencyMs, upstream.Name, 0, retryAttempt, retryCount)
+		h.logToChan(requestID, latencyMs, upstream.Name, 0, retryAttempt, retryCount, finalModel, "POST /v1/messages", "Connection failed")
 		return err, 0
 	}
 	defer resp.Body.Close()
@@ -178,7 +200,7 @@ func (h *ProxyHandler) proxyRequest(w http.ResponseWriter, r *http.Request, upst
 	// Buffer the response body for token extraction
 	bodyBytes, err = ioutil.ReadAll(resp.Body)
 	if err != nil {
-		h.logToChan(requestID, latencyMs, upstream.Name, resp.StatusCode, retryAttempt, retryCount)
+		h.logToChan(requestID, latencyMs, upstream.Name, resp.StatusCode, retryAttempt, retryCount, finalModel, "POST /v1/messages", "Read failed")
 		return err, resp.StatusCode
 	}
 
@@ -196,9 +218,26 @@ func (h *ProxyHandler) proxyRequest(w http.ResponseWriter, r *http.Request, upst
 		}
 	}
 
+	// Build response summary
+	var statusText string
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		statusText = "OK"
+	} else if resp.StatusCode >= 400 && resp.StatusCode < 500 {
+		statusText = "Client Error"
+	} else if resp.StatusCode >= 500 {
+		statusText = "Server Error"
+	} else {
+		statusText = "Unknown"
+	}
+
+	responseSummary := fmt.Sprintf("%d %s", resp.StatusCode, statusText)
+	if inputTokens > 0 || outputTokens > 0 {
+		responseSummary = fmt.Sprintf("%d %s - %din+%dout tokens", resp.StatusCode, statusText, inputTokens, outputTokens)
+	}
+
 	// Log with tokens (both TUI and SQLite channels)
-	h.logToChan(requestID, latencyMs, upstream.Name, resp.StatusCode, retryAttempt, retryCount)
-	h.logToChanWithTokens(requestID, latencyMs, upstream.Name, resp.StatusCode, retryAttempt, retryCount, inputTokens, outputTokens)
+	h.logToChan(requestID, latencyMs, upstream.Name, resp.StatusCode, retryAttempt, retryCount, finalModel, "POST /v1/messages", responseSummary)
+	h.logToChanWithTokens(requestID, latencyMs, upstream.Name, resp.StatusCode, retryAttempt, retryCount, inputTokens, outputTokens, finalModel, "POST /v1/messages", responseSummary)
 
 	// Write response to client
 	w.WriteHeader(resp.StatusCode)
@@ -330,32 +369,38 @@ func (h *ProxyHandler) writeError(w http.ResponseWriter, status int, errType, me
 	json.NewEncoder(w).Encode(errResp)
 }
 
-func (h *ProxyHandler) logToChan(requestID string, latencyMs int64, upstreamName string, statusCode int, retryAttempt, retryCount int) {
+func (h *ProxyHandler) logToChan(requestID string, latencyMs int64, upstreamName string, statusCode int, retryAttempt, retryCount int, model, requestSummary, responseSummary string) {
 	if h.logChan != nil {
 		h.logChan <- RequestLog{
-			Timestamp:    time.Now(),
-			LatencyMs:    latencyMs,
-			UpstreamName: upstreamName,
-			StatusCode:   statusCode,
-			RequestID:    requestID,
-			RetryAttempt: retryAttempt,
-			RetryCount:   retryCount,
+			Timestamp:       time.Now(),
+			LatencyMs:       latencyMs,
+			UpstreamName:    upstreamName,
+			StatusCode:      statusCode,
+			RequestID:       requestID,
+			RetryAttempt:    retryAttempt,
+			RetryCount:      retryCount,
+			Model:           model,
+			RequestSummary:  requestSummary,
+			ResponseSummary: responseSummary,
 		}
 	}
 }
 
-func (h *ProxyHandler) logToChanWithTokens(requestID string, latencyMs int64, upstreamName string, statusCode int, retryAttempt, retryCount, inputTokens, outputTokens int) {
+func (h *ProxyHandler) logToChanWithTokens(requestID string, latencyMs int64, upstreamName string, statusCode int, retryAttempt, retryCount, inputTokens, outputTokens int, model, requestSummary, responseSummary string) {
 	if h.usageChan != nil {
 		h.usageChan <- RequestLog{
-			Timestamp:    time.Now(),
-			LatencyMs:    latencyMs,
-			UpstreamName: upstreamName,
-			StatusCode:   statusCode,
-			RequestID:    requestID,
-			RetryAttempt: retryAttempt,
-			RetryCount:   retryCount,
-			InputTokens:  inputTokens,
-			OutputTokens: outputTokens,
+			Timestamp:       time.Now(),
+			LatencyMs:       latencyMs,
+			UpstreamName:    upstreamName,
+			StatusCode:      statusCode,
+			RequestID:       requestID,
+			RetryAttempt:    retryAttempt,
+			RetryCount:      retryCount,
+			InputTokens:     inputTokens,
+			OutputTokens:    outputTokens,
+			Model:           model,
+			RequestSummary:  requestSummary,
+			ResponseSummary: responseSummary,
 		}
 	}
 }

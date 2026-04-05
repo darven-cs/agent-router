@@ -11,15 +11,15 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/charmbracelet/bubbletea"
+	tea "github.com/charmbracelet/bubbletea"
 	"gorm.io/gorm"
 
 	"agent-router/internal/admin"
 	"agent-router/internal/config"
 	"agent-router/internal/proxy"
 	"agent-router/internal/storage"
-	"agent-router/internal/upstream"
 	tui "agent-router/internal/tui"
+	"agent-router/internal/upstream"
 )
 
 // App holds all application dependencies, replacing global variables

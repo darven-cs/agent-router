@@ -1,0 +1,25 @@
+# Claude & Planning
+.claude/
+.planning/
+
+# Build output
+agent-router
+*.exe
+
+# SQLite WAL files (contain runtime data)
+usage.db
+usage.db-shm
+usage.db-wal
+
+# IDE & OS
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Go
+vendor/
+*.test
+coverage.out

@@ -1,14 +1,23 @@
 # Agent Router
 
-Local API proxy that routes Claude Code requests to multiple upstream providers (Zhipu, Aicodee, Minimax) with automatic failover and load balancing.
+Local API proxy for Claude Code with multi-upstream support, load balancing, automatic failover, usage monitoring, and TUI dashboard.
+
+**Core Value:** Claude Code requests never fail — multi-upstream automatic failover guarantees availability, load balancing optimizes cost.
+
+[English](README.md) | [中文](README_ZH.md)
+
+---
 
 ## Features
 
-- **Claude API Compatible**: Exposes POST /v1/messages endpoint fully compatible with Claude official SDK
-- **Multi-Upstream Support**: Configure multiple upstream providers with enable/disable toggle
-- **Load Balancing**: Modulo-hash distribution across enabled upstreams
-- **Real-time TUI**: Monitor service status, upstream health, and request logs
-- **Authentication**: API key validation on every request
+- **Claude API Compatible** — Exposes `POST /v1/messages` endpoint, fully compatible with the official Claude SDK
+- **Multi-Upstream Support** — Configure multiple upstream providers (Zhipu, Aicodee, Minimax) with per-upstream enable/disable toggle
+- **Load Balancing** — FNV-1a hash modulo distribution across enabled upstreams
+- **Primary Upstream** — Set a preferred upstream; automatically falls back after 3 consecutive failures
+- **Automatic Failover** — Exponential backoff retry on timeout/5xx/429; cycles through all upstreams before giving up
+- **Hot Config Reload** — SIGHUP signal, TUI button, or admin API to reload `config.yaml` without restart
+- **Real-time TUI** — Monitor service status, upstream health, request logs, and token usage
+- **Usage Tracking** — Local SQLite (WAL mode) persists every request with input/output tokens
 
 ## Quick Start
 
@@ -16,18 +25,6 @@ Local API proxy that routes Claude Code requests to multiple upstream providers 
 
 - Go 1.21+
 - API keys for at least one upstream provider
-
-### Configuration
-
-1. Copy `config.yaml` and set your API keys:
-   ```bash
-   export AGENT_ROUTER_API_KEY="your-router-api-key"
-   export ZHIPU_API_KEY="your-zhipu-key"
-   export AICODEE_API_KEY="your-aicodee-key"
-   export MINIMAX_API_KEY="your-minimax-key"
-   ```
-
-2. Edit `config.yaml` to enable/disable upstreams and adjust timeouts
 
 ### Build
 
@@ -42,37 +39,53 @@ make build
 ./agent-router
 ```
 
-### Usage
+### Send a request
 
-Send requests to the proxy:
 ```bash
-curl -X POST http://localhost:8080/v1/messages \
+curl -X POST http://localhost:6856/v1/messages \
   -H "Content-Type: application/json" \
   -H "x-api-key: your-router-api-key" \
-  -d '{"model": "claude-3-5-sonnet", "messages": [{"role": "user", "content": "Hello"}]}'
+  -d '{
+    "model": "claude-sonnet-4-6",
+    "messages": [{"role": "user", "content": "Hello"}]
+  }'
 ```
 
-### TUI Controls
+### Admin API
 
-- **q** or **Ctrl+C**: Quit
+```bash
+# Reload config
+curl -X POST http://localhost:6856/admin/reload \
+  -H "x-api-key: your-router-api-key"
 
-## Configuration
+# Get status
+curl http://localhost:6856/admin/status \
+  -H "x-api-key: your-router-api-key"
+```
 
-| Field | Description |
-|-------|-------------|
-| service.port | HTTP server port |
-| service.api_key | API key for authentication |
-| upstreams[].name | Display name |
-| upstreams[].url | Upstream API endpoint |
-| upstreams[].api_key | Upstream API key (supports env vars) |
-| upstreams[].auth_type | "bearer" or "x-api-key" |
-| upstreams[].enabled | Enable/disable upstream |
-| upstreams[].timeout | Request timeout in seconds |
+## TUI Controls
 
-## Architecture
+| Key | Action |
+|-----|--------|
+| `↑` / `↓` | Navigate upstream list |
+| `Space` | Toggle upstream enabled/disabled |
+| `a` | Add new upstream |
+| `e` | Edit selected upstream |
+| `d` | Delete selected upstream |
+| `m` | Select primary upstream |
+| `r` | Reload config.yaml |
+| `q` | Quit |
 
-- `main.go`: Entry point, TUI orchestration
-- `config.go`: Configuration loading with env expansion
-- `proxy.go`: HTTP handler with authentication and proxying
-- `upstream.go`: Load balancer with modulo-hash distribution
-- `tui.go`: Bubbletea TUI for monitoring
+## Tech Stack
+
+| Component | Technology |
+|-----------|------------|
+| HTTP Server | Go native `net/http` |
+| TUI Framework | `charmbracelet/bubbletea` |
+| TUI Styling | `charmbracelet/lipgloss` |
+| Config | `gopkg.in/yaml.v3` |
+| Database | SQLite + `gorm.io` |
+
+## License
+
+MIT
