@@ -244,10 +244,8 @@ func doReload() error {
 		})
 	}
 
-	// Update shared upstreams (thread-safe via mutex)
-	sharedUpstreams.mu.Lock()
-	sharedUpstreams.upstreams = newList
-	sharedUpstreams.mu.Unlock()
+	// Update shared upstreams (thread-safe via ReplaceAll)
+	sharedUpstreams.ReplaceAll(newList)
 
 	// Re-create load balancer (replace the old one)
 	lb = newUpstreams
