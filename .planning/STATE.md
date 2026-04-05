@@ -100,3 +100,11 @@ None.
 Last session: 2026-04-05T06:35:20.613Z
 Stopped at: Completed 04-03-PLAN.md
 Resume file: None
+
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 260405-l16 | 修复 TUI 切换上游后仍然使用旧上游的 bug，且 Zhipu 出错后下次请求未自动切换模型 | 2026-04-05 | e62eb1d | [260405-l16-tui-bug-zhipu](./quick/260405-l16-tui-bug-zhipu/) |
+
+Last activity: 2026-04-05 - Completed quick task 260405-l16: 修复 TUI 切换上游后仍然使用旧上游的 bug，且 Zhipu 出错后下次请求未自动切换模型
