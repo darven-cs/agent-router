@@ -1,4 +1,4 @@
-package main
+package proxy
 
 import (
 	"context"
@@ -9,6 +9,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"agent-router/internal/upstream"
 )
 
 const (
@@ -16,6 +18,39 @@ const (
 	maxRetries = 3
 	maxDelay   = 4 * time.Second
 )
+
+// RequestLog records a single request's details
+type RequestLog struct {
+	Timestamp    time.Time
+	LatencyMs    int64
+	UpstreamName string
+	StatusCode   int
+	RequestID    string
+	RetryAttempt int // Current retry attempt (0=initial, 1+=retries)
+	RetryCount   int // Total retries for this request
+	InputTokens  int // Tokens in request
+	OutputTokens int // Tokens in response
+}
+
+// ProxyHandler manages HTTP proxying with authentication
+type ProxyHandler struct {
+	lb           *upstream.LoadBalancer
+	apiKey       string
+	defaultModel string
+	logChan      chan<- RequestLog // For TUI display (no tokens)
+	usageChan    chan<- RequestLog // For SQLite persistence (with tokens)
+}
+
+// NewProxyHandler creates a new proxy handler
+func NewProxyHandler(lb *upstream.LoadBalancer, apiKey string, defaultModel string, logChan chan RequestLog, usageChan chan RequestLog) *ProxyHandler {
+	return &ProxyHandler{
+		lb:           lb,
+		apiKey:       apiKey,
+		defaultModel: defaultModel,
+		logChan:      logChan,
+		usageChan:    usageChan,
+	}
+}
 
 // transformModelName replaces the model name in request JSON.
 // It uses the defaultModel if set, otherwise falls back to upstream-specific model.
@@ -39,59 +74,8 @@ func transformModelName(body []byte, defaultModel, upstreamModel string) []byte 
 	return out
 }
 
-// ProxyHandler manages HTTP proxying with authentication
-type ProxyHandler struct {
-	lb          *LoadBalancer
-	apiKey      string
-	defaultModel string // default model for all requests
-	logChan     chan<- RequestLog  // For TUI display (no tokens)
-	usageChan   chan<- RequestLog  // For SQLite persistence (with tokens)
-}
-
-// RequestLog records a single request's details
-type RequestLog struct {
-	Timestamp     time.Time
-	LatencyMs     int64
-	UpstreamName  string
-	StatusCode    int
-	RequestID     string
-	RetryAttempt  int // Current retry attempt (0=initial, 1+=retries)
-	RetryCount    int // Total retries for this request
-	InputTokens   int // Tokens in request
-	OutputTokens  int // Tokens in response
-}
-
-// NewProxyHandler creates a new proxy handler
-func NewProxyHandler(lb *LoadBalancer, apiKey string, defaultModel string, logChan chan RequestLog, usageChan chan RequestLog) *ProxyHandler {
-	return &ProxyHandler{
-		lb:          lb,
-		apiKey:      apiKey,
-		defaultModel: defaultModel,
-		logChan:     logChan,
-		usageChan:   usageChan,
-	}
-}
-
 // ServeHTTP handles incoming HTTP requests
 func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// Route admin endpoints first
-	if r.URL.Path == "/admin/status" {
-		if r.Method == http.MethodGet {
-			handleAdminStatus(w, r)
-			return
-		}
-		http.NotFound(w, r)
-		return
-	}
-	if r.URL.Path == "/admin/reload" {
-		if r.Method == http.MethodPost {
-			handleAdminReload(w, r)
-			return
-		}
-		http.NotFound(w, r)
-		return
-	}
-
 	// Only handle POST /v1/messages
 	if r.Method != http.MethodPost || r.URL.Path != "/v1/messages" {
 		http.NotFound(w, r)
@@ -122,7 +106,7 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.proxyWithRetry(w, r, requestID)
 }
 
-func (h *ProxyHandler) proxyRequest(w http.ResponseWriter, r *http.Request, upstream *Upstream, requestID string, retryAttempt, retryCount int) (error, int) {
+func (h *ProxyHandler) proxyRequest(w http.ResponseWriter, r *http.Request, upstream *upstream.Upstream, requestID string, retryAttempt, retryCount int) (error, int) {
 	start := time.Now()
 
 	// Read and transform request body if upstream has a custom model
@@ -219,7 +203,7 @@ func (h *ProxyHandler) proxyWithRetry(w http.ResponseWriter, r *http.Request, re
 		return
 	}
 
-	var lastUpstream *Upstream
+	var lastUpstream *upstream.Upstream
 	var lastErr error
 	retryCount := 0
 	delay := baseDelay
