@@ -90,12 +90,8 @@ func handleAdminStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get in-memory stats (thread-safe)
-	stats.mu.RLock()
-	totalReqs := stats.totalRequests
-	totalIn := stats.totalTokensIn
-	totalOut := stats.totalTokensOut
-	stats.mu.RUnlock()
+	// Get in-memory stats (thread-safe via GetCounts)
+	totalReqs, totalIn, totalOut := Stats.GetCounts()
 
 	// Query per-upstream counts from SQLite
 	perUpstream := make(map[string]UpstreamStats)
